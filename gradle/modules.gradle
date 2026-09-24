@@ -46,7 +46,7 @@ if (project.hasProperty('checkJava6Compatibility') && !System.getenv("SKIP_RELEA
     configure(publishableModules) { project ->
         project.apply plugin: 'ru.vyarus.animalsniffer'
         project.dependencies {
-            signature 'org.codehaus.mojo.signature:java16:1.0@signature'
+            signature 'org.codehaus.mojo.signature:java18:1.0@signature'
         }
     }
 }
