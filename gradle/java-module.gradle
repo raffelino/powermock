@@ -6,9 +6,13 @@ repositories {
 
 group = "org.powermock"
 
-apply plugin: 'propdeps'
-apply plugin: 'propdeps-maven'
 apply plugin: 'java'
+
+// 'provided' scope, formerly supplied by the propdeps plugin (repo.spring.io/plugins-release is gone, HTTP 401)
+configurations { provided }
+sourceSets.main.compileClasspath += configurations.provided
+sourceSets.test.compileClasspath += configurations.provided
+sourceSets.test.runtimeClasspath += configurations.provided
 
 targetCompatibility = 1.6
 sourceCompatibility = 1.6

@@ -1,20 +1,10 @@
 def subprojects = project(":tests").subprojects  - project(":tests:easymock")
 
-ext {
-    bintrayAutoPublish = false
-    mavenCentralSync = false
-}
-
 jar{
     enabled = false
 }
 
 configure(subprojects) { project ->
-    ext {
-        bintrayAutoPublish = false
-        mavenCentralSync = false
-    }
-
     apply from: "${gradleScriptDir}/java-module.gradle"
 
     test {

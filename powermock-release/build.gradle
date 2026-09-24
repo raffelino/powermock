@@ -1,5 +1,4 @@
 apply from: "${gradleScriptDir}/release/fullJars.gradle"
-apply from: "${gradleScriptDir}/release/distZip.gradle"
 
 jar {
     enabled = false

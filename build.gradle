@@ -3,18 +3,11 @@ buildscript {
         mavenCentral()
         jcenter()
         maven {
-            url 'https://repo.spring.io/plugins-release'
-        }
-        maven {
             url 'https://plugins.gradle.org/m2/'
         }
     }
     dependencies {
-        classpath 'org.springframework.build.gradle:propdeps-plugin:0.0.7'
-        classpath 'com.jfrog.bintray.gradle:gradle-bintray-plugin:1.8.4'
-        classpath 'net.researchgate:gradle-release:2.4.0'
         classpath 'com.github.jengelman.gradle.plugins:shadow:1.2.4'
-        classpath 'org.shipkit:shipkit:2.3.4'
         classpath 'ru.vyarus:gradle-animalsniffer-plugin:1.4.1'
     }
 }
@@ -41,7 +34,8 @@ ext{
     systemRulesVersion="1.18.0"
 }
 
-apply plugin: 'org.shipkit.java'
+// shipkit (Bintray-based release tooling, dead since Bintray shutdown) used to apply 'java' to all projects
+allprojects { apply plugin: 'java' }
 
 description = 'PowerMock allows you to unit test code normally regarded as untestable.\n' +
         '        For instance it is possible to mock static methods, remove static initializers, allow mocking without dependency\n' +
@@ -52,10 +46,6 @@ description = 'PowerMock allows you to unit test code normally regarded as untes
         '        and production code.'
 
 apply from: "${gradleScriptDir}/version.gradle"
-
-allprojects{
-    apply plugin: 'propdeps-idea'
-}
 
 apply from: "${gradleScriptDir}/modules.gradle"
 

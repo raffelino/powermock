@@ -3,7 +3,6 @@ def publishableModules = allprojects - rootProject - project(":powermock-api") -
 configure(publishableModules) { project ->
     apply from: "${gradleScriptDir}/java-module.gradle"
     apply from: "${gradleScriptDir}/publishing/publishable-module.gradle"
-    apply from: "${gradleScriptDir}/publishing/publish.gradle"
 }
 
 def skippedTasksForUnpublishableModules = [
@@ -12,7 +11,6 @@ def skippedTasksForUnpublishableModules = [
     'javadoc',
     'javadocJar',
     'sourcesJar',
-    'bintrayUpload',
     'install'
 ]
 
