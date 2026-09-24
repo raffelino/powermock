@@ -1,7 +1,6 @@
 buildscript {
     repositories {
         mavenCentral()
-        jcenter()
         maven {
             url 'https://plugins.gradle.org/m2/'
         }
@@ -35,7 +34,7 @@ ext{
 }
 
 // shipkit (Bintray-based release tooling, dead since Bintray shutdown) used to apply 'java' to all projects
-allprojects { apply plugin: 'java' }
+allprojects { apply plugin: 'java-library' }
 
 description = 'PowerMock allows you to unit test code normally regarded as untestable.\n' +
         '        For instance it is possible to mock static methods, remove static initializers, allow mocking without dependency\n' +

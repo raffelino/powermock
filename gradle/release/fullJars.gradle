@@ -8,12 +8,11 @@ configure(fullJars){ project ->
     repositories {
         mavenLocal()
         mavenCentral()
-        jcenter()
     }
 
     group = "org.powermock"
 
-    apply plugin: 'java'
+    apply plugin: 'java-library'
     apply plugin: 'com.github.johnrengelman.shadow'
 
     jar{
