@@ -6,7 +6,7 @@ buildscript {
         }
     }
     dependencies {
-        classpath 'com.github.jengelman.gradle.plugins:shadow:1.2.4'
+        classpath 'com.github.johnrengelman:shadow:8.1.1'
         classpath 'ru.vyarus:gradle-animalsniffer-plugin:1.4.1'
     }
 }
@@ -50,8 +50,4 @@ apply from: "${gradleScriptDir}/modules.gradle"
 
 jar{
     enabled = false
-}
-
-task wrapper(type: Wrapper) {
-    gradleVersion = '4.10.2'
 }

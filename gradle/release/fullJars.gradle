@@ -20,9 +20,9 @@ configure(fullJars){ project ->
     }
 
     shadowJar {
-        baseName = project.name
-        version = project.version
-        classifier = "full"
+        archiveBaseName = project.name
+        archiveVersion = project.version
+        archiveClassifier = "full"
 
         manifest.attributes["Created-By"] =
                 "${System.getProperty("java.version")} (${System.getProperty("java.specification.vendor")})"
