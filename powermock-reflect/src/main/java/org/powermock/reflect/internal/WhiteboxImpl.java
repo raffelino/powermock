@@ -39,6 +39,7 @@ import org.powermock.reflect.internal.proxy.UnproxiedType;
 import org.powermock.reflect.matching.FieldMatchingStrategy;
 
 import java.lang.annotation.Annotation;
+import java.lang.reflect.AccessibleObject;
 import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -1505,7 +1506,7 @@ public class WhiteboxImpl {
             });
             for (Method method : declaredMethods) {
                 if(!"finalize".equals(method.getName())) {
-                    method.setAccessible(true);
+                    trySetAccessible(method);
                     methods.add(method);
                 }
             }
@@ -1513,6 +1514,22 @@ public class WhiteboxImpl {
             thisType = thisType.getSuperclass();
         }
         return methods.toArray(new Method[methods.size()]);
+    }
+
+    /**
+     * Like {@code setAccessible(true)}, but tolerates JDK 9+ strong encapsulation: if the member's
+     * package is not opened to us (InaccessibleObjectException), it is left inaccessible. Callers that
+     * later need to invoke such a member will still fail there, with the JDK's message.
+     */
+    private static void trySetAccessible(AccessibleObject object) {
+        try {
+            object.setAccessible(true);
+        } catch (RuntimeException e) {
+            // InaccessibleObjectException does not exist on JDK 8, so match by name.
+            if (!"java.lang.reflect.InaccessibleObjectException".equals(e.getClass().getName())) {
+                throw e;
+            }
+        }
     }
 
     /**
