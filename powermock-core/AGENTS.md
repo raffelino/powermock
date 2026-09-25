@@ -9,7 +9,7 @@
 - Skips are expected: transformer tests are parameterized over `TransformStrategy` (CLASSLOADER / INST_REDEFINE) and use `Assume` to drop unsupported combos.
 - Checkstyle is applied only when Gradle runs on JDK 8: `./gradlew :powermock-core:checkstyleMain :powermock-core:checkstyleTest`.
 - Test task excludes `**/*Defect*` and `**/*TestCase*` — a class named like that never runs.
-- JDK 17 without opens: 48 failures (`InaccessibleObjectException`). With `JAVA_TOOL_OPTIONS="--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED"` only 1 remains (`PowerMockIgnorePackagesExtractorImplTest`, ClassCastException from its test factory returning the wrong config type).
+- JDK 17 without opens: 48 failures (`InaccessibleObjectException`). With `JAVA_TOOL_OPTIONS="--add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED"` the 48 access failures disappear; the one `ClassCastException` that remained (`PowerMockIgnorePackagesExtractorImplTest`) was a test-factory bug fixed for JDK 11+.
 
 ## Key files (under `src/main/java/org/powermock/`)
 - `core/classloader/MockClassLoaderConfiguration.java` — decides defer vs. load-unmodified vs. transform (`PACKAGES_TO_BE_DEFERRED`, `PACKAGES_TO_LOAD_BUT_NOT_MODIFY`).
