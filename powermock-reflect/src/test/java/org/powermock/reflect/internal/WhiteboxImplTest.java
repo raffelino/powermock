@@ -100,4 +100,20 @@ public class WhiteboxImplTest {
 		);
 		assertEquals(methods[0], method);
 	}
+
+    @Test
+    public void listsMethodsOfJdkClassInPackageNotOpenedToUnnamedModule() throws Exception {
+        // java.util.logging is not opened in the JDK 17 test run: private methods cannot be made accessible there
+        assertThat(WhiteboxImpl.getMethods(java.util.logging.Logger.class, "getLogger")).isNotEmpty();
+        assertThat(WhiteboxImpl.getAllMethods(java.util.logging.Handler.class)).isNotEmpty();
+    }
+
+    @Test
+    public void privateMethodOfUserClassIsStillMadeAccessible() throws Exception {
+        for (Method method : WhiteboxImpl.getAllMethods(ClassWithPrivateMethods.class)) {
+            if (method.getDeclaringClass() == ClassWithPrivateMethods.class) {
+                assertThat(method.isAccessible()).isTrue();
+            }
+        }
+    }
 }

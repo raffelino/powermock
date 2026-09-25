@@ -1505,7 +1505,7 @@ public class WhiteboxImpl {
             });
             for (Method method : declaredMethods) {
                 if(!"finalize".equals(method.getName())) {
-                    method.setAccessible(true);
+                    setAccessibleIfPermitted(method);
                     methods.add(method);
                 }
             }
@@ -1513,6 +1513,22 @@ public class WhiteboxImpl {
             thisType = thisType.getSuperclass();
         }
         return methods.toArray(new Method[methods.size()]);
+    }
+
+    /**
+     * Makes the method accessible. On Java 9+ a method of a JDK class in a package that is not opened
+     * to PowerMock cannot be made accessible (InaccessibleObjectException); such a method is left as is,
+     * it is still listed and its public API stays usable. Any other exception is rethrown.
+     */
+    private static void setAccessibleIfPermitted(Method method) {
+        try {
+            method.setAccessible(true);
+        } catch (RuntimeException e) {
+            // InaccessibleObjectException is Java 9+ API, so it is matched by name (sources are Java 8)
+            if (!"java.lang.reflect.InaccessibleObjectException".equals(e.getClass().getName())) {
+                throw e;
+            }
+        }
     }
 
     /**
@@ -1529,7 +1545,7 @@ public class WhiteboxImpl {
         Set<Method> methods = new LinkedHashSet<Method>();
 
         for (Method method : clazz.getMethods()) {
-            method.setAccessible(true);
+            setAccessibleIfPermitted(method);
             methods.add(method);
         }
         return methods.toArray(new Method[0]);
@@ -1753,7 +1769,7 @@ public class WhiteboxImpl {
         for (Method method : allMethods) {
             for (String methodName : methodNames) {
                 if (method.getName().equals(methodName)) {
-                    method.setAccessible(true);
+                    setAccessibleIfPermitted(method);
                     methodsToMock.add(method);
                 }
             }
