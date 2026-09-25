@@ -39,6 +39,7 @@ import org.powermock.reflect.internal.proxy.UnproxiedType;
 import org.powermock.reflect.matching.FieldMatchingStrategy;
 
 import java.lang.annotation.Annotation;
+import java.lang.reflect.AccessibleObject;
 import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -78,6 +79,48 @@ public class WhiteboxImpl {
      * TODO replace with ClassValue when Powermock drops Java 6 support.
      */
     private static ConcurrentMap<Class, Method[]> allClassMethodsCache = new ConcurrentHashMap<Class, Method[]>();
+
+    /**
+     * {@code AccessibleObject.trySetAccessible()} (Java 9+), looked up reflectively so the code stays
+     * Java 8 compatible. {@code null} on Java 8, where every object can be made accessible.
+     */
+    private static final Method TRY_SET_ACCESSIBLE = findTrySetAccessible();
+
+    private static Method findTrySetAccessible() {
+        try {
+            return AccessibleObject.class.getMethod("trySetAccessible");
+        } catch (NoSuchMethodException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Makes {@code object} accessible if the module system allows it. On Java 9+ a member of a JDK class in
+     * a package that is not opened to PowerMock stays inaccessible instead of throwing
+     * {@code InaccessibleObjectException}; everything else behaves like {@code setAccessible(true)}.
+     *
+     * @return whether the object is now accessible
+     */
+    private static boolean trySetAccessible(AccessibleObject object) {
+        if (TRY_SET_ACCESSIBLE == null) {
+            object.setAccessible(true);
+            return true;
+        }
+        try {
+            return (Boolean) TRY_SET_ACCESSIBLE.invoke(object);
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException("AccessibleObject.trySetAccessible is public", e);
+        } catch (InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException) {
+                throw (RuntimeException) cause;
+            }
+            if (cause instanceof Error) {
+                throw (Error) cause;
+            }
+            throw new IllegalStateException(cause);
+        }
+    }
 
     /**
      * Convenience method to get a method from a class type without having to
@@ -1505,7 +1548,7 @@ public class WhiteboxImpl {
             });
             for (Method method : declaredMethods) {
                 if(!"finalize".equals(method.getName())) {
-                    method.setAccessible(true);
+                    trySetAccessible(method);
                     methods.add(method);
                 }
             }
@@ -1529,7 +1572,7 @@ public class WhiteboxImpl {
         Set<Method> methods = new LinkedHashSet<Method>();
 
         for (Method method : clazz.getMethods()) {
-            method.setAccessible(true);
+            trySetAccessible(method);
             methods.add(method);
         }
         return methods.toArray(new Method[0]);
@@ -1753,7 +1796,7 @@ public class WhiteboxImpl {
         for (Method method : allMethods) {
             for (String methodName : methodNames) {
                 if (method.getName().equals(methodName)) {
-                    method.setAccessible(true);
+                    trySetAccessible(method);
                     methodsToMock.add(method);
                 }
             }
