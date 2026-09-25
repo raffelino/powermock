@@ -29,5 +29,5 @@ PowerMock 2.0.10 (`version.properties`) extends EasyMock/Mockito via bytecode ma
 - `-PcheckJava6Compatibility` applies animalsniffer (signature `java18`) to publishable modules; changing `sourceCompatibility` breaks the 1.8 contract of the published jars.
 
 ## Verify a change
-- Golden state (`clean test --continue`): JDK 8 = 1599 tests / 1474 pass / 0 fail / 125 skip; JDK 11 = 1590 / 1465 / 0 / 125 (2 failures before the two JDK-11 test fixes). JDK 17 without `--add-opens` ≈ 756 failures: known, not a regression.
+- Golden state (`clean test --continue`): JDK 8 = 1599 tests / 1474 pass / 0 fail / 125 skip; JDK 11 = 1590 / 1465 / 0 / 125 (2 failures before the two JDK-11 test fixes). JDK 17 without `--add-opens` ~750 failures (756 measured before the JDK 11 test fixes): known, not a regression.
 - Sum `build/test-results/test/*.xml` per module and diff against the previous run. `BUILD SUCCESSFUL` alone proves nothing (a module can silently drop to 0 tests).
