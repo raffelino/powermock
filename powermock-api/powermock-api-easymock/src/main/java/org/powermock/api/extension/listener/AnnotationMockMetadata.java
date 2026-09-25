@@ -47,7 +47,7 @@ public class AnnotationMockMetadata implements MockMetadata {
     private String findQualifier() {
         String fieldName = "";
         try {
-            fieldName = Whitebox.invokeMethod(annotationInstance, "fieldName");
+            fieldName = (String) annotation.getMethod("fieldName").invoke(annotationInstance);
         } catch (Exception e) {
             // do nothing, because it means that Mock annotation doesn't support qualifier. S
             // ee org.easymock.Mock.fieldName
@@ -87,7 +87,8 @@ public class AnnotationMockMetadata implements MockMetadata {
 
     private Method[] getMethod() throws Exception {
 
-        final String[] value = Whitebox.invokeMethod(annotationInstance, "value");
+        // call via the annotation interface, not the JDK proxy class (not open on JDK 16+)
+        final String[] value = (String[]) annotation.getMethod("value").invoke(annotationInstance);
         if (value.length != 1 || !"".equals(value[0])) {
             return Whitebox.getMethods(type, value);
         }
