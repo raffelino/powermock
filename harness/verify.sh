@@ -31,7 +31,7 @@ DISABLE = re.compile(r"@Ignore\b|@Disabled\b|assumeTrue\s*\(\s*false\s*\)|assume
 OPENS = re.compile(r"--add-opens|--add-exports|--illegal-access|Add-Opens|Add-Exports|implAddOpens|addOpens\s*\(")
 TESTCFG = re.compile(r"jvmArgs|jvmArgumentProviders|\bexclude\b|excludeTestsMatching|includeTestsMatching|\bfilter\s*\{|useJUnit|useTestNG|useJUnitPlatform|\benabled\b|ignoreFailures|onlyIf|failFast|forkEvery|systemPropert")
 ALLOW = re.compile(r"exclude\s*\(?\s*group\s*:|exclude\s*\(?\s*module\s*:")  # dependency excludes are fine
-ASSERT = re.compile(r"\bassert\w*\s*\(|\bexpect\w*\s*\(|\bverify\w*\s*\(|\bfail\s*\(|@Test\b|\bthrows\b|expected\s*=")
+ASSERT = re.compile(r"\bassert\w*\s*\(|\bexpect\w*\s*\(|\bverify\w*\s*\(|\bfail\s*\(|@Test\b|expected\s*=")
 f, tests = None, {}
 for l in diff.splitlines():
     if l.startswith("+++ "): f = l[6:] if l.startswith("+++ b/") else f; continue
