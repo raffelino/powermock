@@ -1505,7 +1505,11 @@ public class WhiteboxImpl {
             });
             for (Method method : declaredMethods) {
                 if(!"finalize".equals(method.getName())) {
-                    method.setAccessible(true);
+                    try {
+                        method.setAccessible(true);
+                    } catch (RuntimeException e) {
+                        // JDK 9+: InaccessibleObjectException for packages not opened to us; keep the method, just not accessible
+                    }
                     methods.add(method);
                 }
             }
