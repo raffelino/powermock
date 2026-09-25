@@ -15,7 +15,7 @@
 - `gradle/java-module.gradle` — global test exclude `**/*Defect*`, `**/*TestCase*`.
 
 ## Gotchas
-- `tests/java8/*`: `if (JavaVersion.current() != VERSION_1_8) project.tasks.all { enabled = false }` — on any other JDK *every* task is SKIPPED, including `clean`. Old JDK 8 XML stays in `tests/java8/*/build/test-results`; don't count those as a fresh run. Delete `build/` by hand if needed.
+- `tests/java8/*`: `if (!(JavaVersion.current() in [VERSION_1_8, VERSION_11])) project.tasks.all { enabled = false }` — on any other JDK (17, 21) *every* task is SKIPPED, including `clean`. Old XML stays in `tests/java8/*/build/test-results`; don't count those as a fresh run. Delete `build/` by hand if needed.
 - `tests/java11/*`: the matching JDK-11 guard is commented out (TODO) — it runs on every JDK, including 8.
 - TestNG modules run ONLY classes listed in their `suite.xml`, wired via `test { useTestNG() { suites 'suite.xml' } }`. Lose that block and Gradle falls back to JUnit: 0 tests, BUILD SUCCESSFUL (verified on `:tests:testng`). A new TestNG class not added to `suite.xml` never runs.
 - Shared test output: `mockito:junit4` test classes feed `mockito:{junit4-agent,junit4-rule-*,junit4-delegate,testng}`, `java8/*`, `java11/*`; `easymock:junit4` feeds `easymock:junit45..412`. One edit there changes counts in many modules.
@@ -28,4 +28,4 @@
 ## Verify
 - Count tests per module from `build/test-results/test/*.xml`; BUILD SUCCESSFUL proves nothing.
 - Baseline JDK 8 `clean test --continue`: 1599 tests = 1474 pass / 0 fail / 125 skip (repo-wide). Largest: `easymock:junit4` 304 (5 skip), `mockito:junit4` 232, `mockito:junit4-agent` 129, `mockito:junit4-delegate` 112, `mockito:junit4-rule-objenesis` 93 (54 skip), `mockito:junit4-rule-xstream` 94. TestNG: `easymock:testng` 24, `easymock:testng-agent` 22, `testng` 1, `mockito:testng` 1.
-- JDK 11: 9 fewer tests (the 4 `java8` modules: 6+1+1+1 are SKIPPED); otherwise same per-module numbers.
+- JDK 11: same per-module numbers as JDK 8 (1599; the 4 `java8` modules 6+1+1+1 run too). JDK 17/21 skip the `java8` modules (9 fewer).

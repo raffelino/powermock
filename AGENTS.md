@@ -18,7 +18,7 @@ PowerMock 2.0.10 (`version.properties`) extends EasyMock/Mockito via bytecode ma
 ## Gotchas
 - `provided` is hand-rolled (propdeps plugin repo is dead): plain configuration added to main compile + test compile/runtime classpaths; `publish-maven.gradle` writes it into the POM as `scope provided`. Only user: `powermock-module-junit4-rule` → `classloading-base`.
 - Tests named `*Defect*` or `*TestCase*` are excluded from `test` (`java-module.gradle`). Such a class never runs.
-- `tests/java8/*`: all tasks (incl. `clean`) disabled on JDK != 8, so JDK 11 counts 9 fewer tests, and stale JDK-8 XML results survive `clean`. Count only fresh result files.
+- `tests/java8/*`: all tasks (incl. `clean`) disabled on JDKs other than 8 and 11 (17/21 skip them, 9 fewer tests), and stale XML results survive `clean` there. Count only fresh result files.
 - Checkstyle is applied only when Gradle runs on JDK 8.
 - `tests:testng` needs its `useTestNG { suites 'suite.xml' }` block. Without it the module runs 0 tests and the build still passes.
 - CI: JDK 8 and 11 must pass; 17/21 are `experimental` (`continue-on-error`), known red until module-access (`--add-opens`) work.
@@ -29,5 +29,5 @@ PowerMock 2.0.10 (`version.properties`) extends EasyMock/Mockito via bytecode ma
 - `-PcheckJava6Compatibility` applies animalsniffer (signature `java18`) to publishable modules; changing `sourceCompatibility` breaks the 1.8 contract of the published jars.
 
 ## Verify a change
-- Golden state (`clean test --continue`): JDK 8 = 1599 tests / 1474 pass / 0 fail / 125 skip; JDK 11 = 1590 / 1465 / 0 / 125 (2 failures before the two JDK-11 test fixes). JDK 17 without `--add-opens` ~750 failures (756 measured before the JDK 11 test fixes): known, not a regression.
+- Golden state (`clean test --continue`): JDK 8 = 1599 tests / 1474 pass / 0 fail / 125 skip; JDK 11 = 1599 / 1474 / 0 / 125 (1590 before `tests/java8` was enabled on 11; 2 failures before the two JDK-11 test fixes). JDK 17 without `--add-opens` ~750 failures (756 measured before the JDK 11 test fixes): known, not a regression.
 - Sum `build/test-results/test/*.xml` per module and diff against the previous run. `BUILD SUCCESSFUL` alone proves nothing (a module can silently drop to 0 tests).
