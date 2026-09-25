@@ -1,6 +1,6 @@
 configure(project.subprojects) { subproject ->
 
-    if (JavaVersion.current() != JavaVersion.VERSION_1_8) {
+    if (!(JavaVersion.current() in [JavaVersion.VERSION_1_8, JavaVersion.VERSION_11])) {
         project.tasks.all { task -> task.enabled = false }
     }
 
