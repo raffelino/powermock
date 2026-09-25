@@ -1485,6 +1485,18 @@ public class WhiteboxImpl {
         return allMethods;
     }
 
+    /**
+     * {@code method.setAccessible(true)} that tolerates JDK 9+ modules: a member of a package that is not
+     * opened to us (InaccessibleObjectException) is left inaccessible instead of failing the whole lookup.
+     */
+    private static void trySetAccessible(Method method) {
+        try {
+            method.setAccessible(true);
+        } catch (RuntimeException e) {
+            // InaccessibleObjectException (JDK 9+); not referenced directly because we compile for Java 8.
+        }
+    }
+
     private static Method[] doGetAllMethods(Class<?> clazz) {
         if (clazz == null) {
             throw new IllegalArgumentException("You must specify a class in order to get the methods.");
@@ -1505,7 +1517,7 @@ public class WhiteboxImpl {
             });
             for (Method method : declaredMethods) {
                 if(!"finalize".equals(method.getName())) {
-                    method.setAccessible(true);
+                    trySetAccessible(method);
                     methods.add(method);
                 }
             }
@@ -1753,7 +1765,7 @@ public class WhiteboxImpl {
         for (Method method : allMethods) {
             for (String methodName : methodNames) {
                 if (method.getName().equals(methodName)) {
-                    method.setAccessible(true);
+                    trySetAccessible(method);
                     methodsToMock.add(method);
                 }
             }

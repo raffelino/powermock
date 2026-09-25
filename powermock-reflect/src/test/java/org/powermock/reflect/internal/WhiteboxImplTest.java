@@ -100,4 +100,20 @@ public class WhiteboxImplTest {
 		);
 		assertEquals(methods[0], method);
 	}
+
+	/**
+	 * java.util.logging is not opened to the unnamed module on JDK 17, so setAccessible on its private
+	 * members throws InaccessibleObjectException. Method lookup must still work.
+	 */
+	@Test
+	public void methodsOfClassesInNotOpenedJdkPackagesAreFound() {
+		Method[] allMethods = WhiteboxImpl.getAllMethods(java.util.logging.Logger.class);
+		List<String> methodNames = new ArrayList<String>();
+		for (Method method : allMethods) {
+			methodNames.add(method.getName());
+		}
+		assertThat(methodNames).contains("getLogger", "info");
+
+		assertThat(WhiteboxImpl.getMethods(java.util.logging.Logger.class, "getLogger")).isNotEmpty();
+	}
 }
