@@ -26,6 +26,8 @@ import javassist.CtNewMethod;
 import javassist.Modifier;
 import javassist.NotFoundException;
 
+import java.io.IOException;
+import java.security.ProtectionDomain;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
@@ -60,7 +62,7 @@ public class ClassReplicaCreator {
                         code, newClass);
             }
 
-            return (Class<T>) newClass.toClass(this.getClass().getClassLoader(), this.getClass().getProtectionDomain());
+            return (Class<T>) defineClass(newClass, getClass());
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -105,9 +107,33 @@ public class ClassReplicaCreator {
                 CtConstructor copy = CtNewConstructor.copy(ctConstructor, newClass, null);
                 newClass.addConstructor(copy);
             }
-            return (Class<T>) newClass.toClass(this.getClass().getClassLoader(), this.getClass().getProtectionDomain());
+            return (Class<T>) defineClass(newClass, getClass());
         } catch (Exception e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * Defines the generated class in a fresh child class loader of {@code owner}'s loader.
+     * javassist's {@code CtClass.toClass(ClassLoader, ProtectionDomain)} calls
+     * {@code ClassLoader.defineClass} reflectively, which fails on JDK 16+ without
+     * opening java.base/java.lang to the unnamed module. Generated classes live in their own
+     * package ("replica."/"subclass."), so a separate loader changes no access rules.
+     */
+    static Class<?> defineClass(CtClass ctClass, Class<?> owner) throws CannotCompileException, IOException {
+        final byte[] bytes = ctClass.toBytecode();
+        return new GeneratedClassLoader(owner.getClassLoader())
+                .define(ctClass.getName(), bytes, owner.getProtectionDomain());
+    }
+
+    // public: the mock class loader may load this nested class apart from its outer class
+    public static final class GeneratedClassLoader extends ClassLoader {
+        public GeneratedClassLoader(ClassLoader parent) {
+            super(parent);
+        }
+
+        public Class<?> define(String name, byte[] bytes, ProtectionDomain domain) {
+            return defineClass(name, bytes, 0, bytes.length, domain);
         }
     }
 

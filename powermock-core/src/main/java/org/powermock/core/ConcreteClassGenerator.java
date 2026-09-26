@@ -64,7 +64,7 @@ public class ConcreteClassGenerator {
 			if (!hasInheritableConstructor(originalClassAsCtClass)) {
 				return null;
 			}
-			return newClass.toClass(this.getClass().getClassLoader(), this.getClass().getProtectionDomain());
+			return ClassReplicaCreator.defineClass(newClass, getClass());
 		} catch (Exception e) {
 			throw new RuntimeException(e);
 		}
