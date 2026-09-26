@@ -45,6 +45,7 @@ public class MockClassLoaderConfiguration {
         "jdk.*",
         "java.*",
         "javax.accessibility.*",
+        "javax.crypto.*",
         "sun.*",
         "org.junit.*",
         "org.testng.*",
