@@ -1505,7 +1505,7 @@ public class WhiteboxImpl {
             });
             for (Method method : declaredMethods) {
                 if(!"finalize".equals(method.getName())) {
-                    method.setAccessible(true);
+                    setAccessibleUnlessModuleClosed(method);
                     methods.add(method);
                 }
             }
@@ -1513,6 +1513,22 @@ public class WhiteboxImpl {
             thisType = thisType.getSuperclass();
         }
         return methods.toArray(new Method[methods.size()]);
+    }
+
+    /**
+     * Makes the method accessible. On Java 9+ a non-public member of a JDK class in a package that is not
+     * opened to us cannot be made accessible (InaccessibleObjectException); such a method is left as it is,
+     * so that the class hierarchy can still be listed. Any other failure is propagated.
+     */
+    private static void setAccessibleUnlessModuleClosed(Method method) {
+        try {
+            method.setAccessible(true);
+        } catch (RuntimeException e) {
+            // InaccessibleObjectException is Java 9+ API, so it is matched by name to stay Java 8 compatible.
+            if (!"java.lang.reflect.InaccessibleObjectException".equals(e.getClass().getName())) {
+                throw e;
+            }
+        }
     }
 
     /**
