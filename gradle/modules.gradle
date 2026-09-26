@@ -63,7 +63,7 @@ project(":powermock-reflect") {
         }
         testImplementation("org.hamcrest:hamcrest-core:${hamcrestVersion}")
         testImplementation("org.assertj:assertj-core:${assertjVersion}")
-        testImplementation("cglib:cglib-nodep:3.3.0")
+        testImplementation("cglib:cglib-nodep:${cglibVersion}")
     }
 }
 
