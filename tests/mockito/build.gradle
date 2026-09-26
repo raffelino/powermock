@@ -154,7 +154,7 @@ project(":tests:mockito:testng"){
     test{
         useTestNG(){
             suites 'suite.xml'
-            environment "mockitoVersion", "${mockitoVersion}"
+            environment "mockitoVersion", "${mockitoResolvedVersion}"
         }
     }
 }
