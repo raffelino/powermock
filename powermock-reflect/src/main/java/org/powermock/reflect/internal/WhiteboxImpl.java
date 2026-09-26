@@ -1505,8 +1505,13 @@ public class WhiteboxImpl {
             });
             for (Method method : declaredMethods) {
                 if(!"finalize".equals(method.getName())) {
-                    method.setAccessible(true);
-                    methods.add(method);
+                    try {
+                        method.setAccessible(true);
+                        methods.add(method);
+                    } catch (Exception ignored) {
+                        // the InaccessibleObjectException is thrown in Java 9 in case
+                        // if a method is private and a module is not open
+                    }
                 }
             }
             Collections.addAll(methods, type.getMethods());
@@ -1529,8 +1534,13 @@ public class WhiteboxImpl {
         Set<Method> methods = new LinkedHashSet<Method>();
 
         for (Method method : clazz.getMethods()) {
-            method.setAccessible(true);
-            methods.add(method);
+            try {
+                method.setAccessible(true);
+                methods.add(method);
+            } catch (Exception ignored) {
+                // the InaccessibleObjectException is thrown in Java 9 in case
+                // if a method is private and a module is not open
+            }
         }
         return methods.toArray(new Method[0]);
     }
