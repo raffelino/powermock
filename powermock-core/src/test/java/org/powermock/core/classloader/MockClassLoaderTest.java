@@ -319,7 +319,12 @@ public class MockClassLoaderTest {
                 ClassPool cp = ClassPool.getDefault();
                 final CtClass ctClass = cp.makeClass("my.ABCTestClass");
                 classBytes = ctClass.toBytecode();
-                clazz = ctClass.toClass();
+                // define via a plain ClassLoader subclass: ctClass.toClass() makes ClassLoader.defineClass accessible, denied on JDK 16+
+                clazz = new ClassLoader(MockClassLoaderTest.class.getClassLoader()) {
+                    Class<?> define() {
+                        return defineClass(ctClass.getName(), classBytes, 0, classBytes.length);
+                    }
+                }.define();
             } catch (Exception e) {
                 throw new RuntimeException("Problem constructing custom class", e);
             }
