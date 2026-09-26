@@ -38,6 +38,10 @@ public class MockitoVersion {
         return MOCKITO_VERSION.isMockito4_0();
     }
 
+    public static boolean isMockito5(){
+        return MOCKITO_VERSION.isMockito5_0();
+    }
+
     private static final MockitoVersion MOCKITO_VERSION = new MockitoVersion();
     
     private final String version;
@@ -74,5 +78,9 @@ public class MockitoVersion {
 
     private boolean isMockito4_0() {
         return version.startsWith("4");
+    }
+
+    private boolean isMockito5_0() {
+        return version.startsWith("5");
     }
 }

@@ -23,6 +23,8 @@ import org.mockito.plugins.MockMaker;
 import org.powermock.configuration.MockitoConfiguration;
 
 class MockMakerLoader {
+    private static final String SUBCLASS_MOCK_MAKER = "org.mockito.internal.creation.bytebuddy.ByteBuddyMockMaker";
+
     MockMaker load(final MockitoConfiguration mockitoConfiguration) {
         
         ClassLoader loader = Thread.currentThread().getContextClassLoader();
@@ -42,7 +44,9 @@ class MockMakerLoader {
     private MockMaker doLoad(final ClassLoader loader, final String mockMakerClassName)
         throws ClassNotFoundException, InstantiationException, IllegalAccessException {
         if (mockMakerClassName == null) {
-            return Mockito.framework().getPlugins().getDefaultPlugin(MockMaker.class);
+            // Mockito 5 made the inline mock maker its default; PowerMock needs the subclass mock maker
+            // (Mockito 2-4 default), which exists under this name in all versions.
+            return doLoad(MockMaker.class.getClassLoader(), SUBCLASS_MOCK_MAKER);
         } else if ("mock-maker-inline".equals(mockMakerClassName)) {
             return Mockito.framework().getPlugins().getInlineMockMaker();
         } else {

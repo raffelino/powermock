@@ -36,8 +36,11 @@ public class PowerMockMaker implements MockMaker {
         mockMaker = new MockMakerLoader().load(GlobalConfiguration.mockitoConfiguration());
     }
     
+    // Raw signature = erasure of both Mockito 4 (MockHandler) and Mockito 5 (MockHandler<T>) variants,
+    // so this class implements MockMaker for either version.
     @Override
-    public <T> T createMock(MockCreationSettings<T> settings, MockHandler handler){
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public Object createMock(MockCreationSettings settings, MockHandler handler){
         return mockMaker.createMock(settings, handler);
     }
     
