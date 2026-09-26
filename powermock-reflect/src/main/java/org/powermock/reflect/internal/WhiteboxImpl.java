@@ -1504,8 +1504,7 @@ public class WhiteboxImpl {
 
             });
             for (Method method : declaredMethods) {
-                if(!"finalize".equals(method.getName())) {
-                    method.setAccessible(true);
+                if(!"finalize".equals(method.getName()) && trySetAccessible(method)) {
                     methods.add(method);
                 }
             }
@@ -1513,6 +1512,25 @@ public class WhiteboxImpl {
             thisType = thisType.getSuperclass();
         }
         return methods.toArray(new Method[methods.size()]);
+    }
+
+    /**
+     * Makes the method accessible. On Java 9+ a non-public method of a class in a module package that is not
+     * opened to PowerMock cannot be made accessible (InaccessibleObjectException); such a method is skipped,
+     * since it could not be invoked reflectively anyway. Its public methods are still collected via getMethods().
+     * Any other exception is rethrown.
+     */
+    private static boolean trySetAccessible(Method method) {
+        try {
+            method.setAccessible(true);
+            return true;
+        } catch (RuntimeException e) {
+            // InaccessibleObjectException is Java 9+ API, so match it by name to stay Java 8 source compatible
+            if ("java.lang.reflect.InaccessibleObjectException".equals(e.getClass().getName())) {
+                return false;
+            }
+            throw e;
+        }
     }
 
     /**

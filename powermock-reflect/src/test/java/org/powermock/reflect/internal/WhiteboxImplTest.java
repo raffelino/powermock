@@ -100,4 +100,28 @@ public class WhiteboxImplTest {
 		);
 		assertEquals(methods[0], method);
 	}
+
+	@Test
+	public void getAllMethodsDoesNotFailForJdkClassInPackageThatIsNotOpened() throws Exception {
+		// java.io is not opened to the unnamed module on Java 9+; File's private methods cannot be made accessible
+		final Method[] methods = WhiteboxImpl.getAllMethods(java.io.File.class);
+		final List<String> names = new ArrayList<String>();
+		for (Method method : methods) {
+			names.add(method.getName());
+		}
+		assertThat(names).contains("getName", "exists", "hashCode");
+	}
+
+	@Test
+	public void getAllMethodsStillMakesPrivateMethodsOfUserClassesAccessible() throws Exception {
+		Method found = null;
+		for (Method method : WhiteboxImpl.getAllMethods(WhiteboxImpl.class)) {
+			if (method.getName().equals("checkIfParameterTypesAreSame")) {
+				found = method;
+			}
+		}
+		assertThat(found).isNotNull();
+		assertThat(found.isAccessible()).isTrue();
+		assertThat((Boolean) found.invoke(null, false, new Class<?>[] { Class.class }, new Class<?>[] { Class.class })).isTrue();
+	}
 }
