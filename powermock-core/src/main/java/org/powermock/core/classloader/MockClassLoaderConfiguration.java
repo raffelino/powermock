@@ -75,7 +75,8 @@ public class MockClassLoaderConfiguration {
     private final String[] specificClassesToLoadButNotModify = new String[]{
         InvocationSubstitute.class.getName(),
         PowerMockPolicy.class.getName(),
-        ClassReplicaCreator.class.getName()
+        ClassReplicaCreator.class.getName(),
+        ClassReplicaCreator.ReplicaClassLoader.class.getName()
     };
     
     private final Set<String> modify = Collections.synchronizedSet(new HashSet<String>());

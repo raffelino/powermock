@@ -60,7 +60,7 @@ public class ClassReplicaCreator {
                         code, newClass);
             }
 
-            return (Class<T>) newClass.toClass(this.getClass().getClassLoader(), this.getClass().getProtectionDomain());
+            return (Class<T>) defineClass(newClass);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -105,9 +105,34 @@ public class ClassReplicaCreator {
                 CtConstructor copy = CtNewConstructor.copy(ctConstructor, newClass, null);
                 newClass.addConstructor(copy);
             }
-            return (Class<T>) newClass.toClass(this.getClass().getClassLoader(), this.getClass().getProtectionDomain());
+            return (Class<T>) defineClass(newClass);
         } catch (Exception e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * Defines the replica in a child class loader of our own loader. Calling the protected
+     * {@code ClassLoader.defineClass} from a subclass needs no reflection, so this also works on
+     * JDK 16+ where javassist's {@code CtClass.toClass(ClassLoader, ProtectionDomain)} fails with
+     * an InaccessibleObjectException unless java.lang is opened.
+     */
+    private Class<?> defineClass(CtClass ctClass) throws Exception {
+        final byte[] bytes = ctClass.toBytecode();
+        return new ReplicaClassLoader(getClass().getClassLoader()).define(ctClass.getName(), bytes);
+    }
+
+    /**
+     * Must be loaded by the same class loader as {@link ClassReplicaCreator}, see
+     * MockClassLoaderConfiguration.
+     */
+    public static class ReplicaClassLoader extends ClassLoader {
+        ReplicaClassLoader(ClassLoader parent) {
+            super(parent);
+        }
+
+        Class<?> define(String name, byte[] bytes) {
+            return defineClass(name, bytes, 0, bytes.length, ClassReplicaCreator.class.getProtectionDomain());
         }
     }
 
