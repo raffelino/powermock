@@ -18,10 +18,12 @@ package org.powermock.reflect.internal;
 import org.junit.Test;
 import org.powermock.reflect.testclasses.*;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.assertj.core.api.Java6Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
@@ -66,6 +68,22 @@ public class WhiteboxImplTest {
 		final Method[] methods = WhiteboxImpl.getMethods(WhiteboxImpl.class, "checkIfParameterTypesAreSame");
 		assertThat(methods).hasSize(1);
 		assertThat(methods[0].isAccessible()).isTrue();
+	}
+
+	@Test
+	public void getAllFieldsFindsFieldsOfJdkClassInPackageNotOpenedToPowerMock() throws Exception {
+		// java.util.concurrent is not opened to the unnamed module on Java 17, so its private fields stay inaccessible
+		final Field[] fields = WhiteboxImpl.getAllFields(ConcurrentHashMap.class);
+		assertThat(fields).isNotEmpty();
+	}
+
+	@Test
+	public void getAllFieldsStillMakesPrivateFieldsOfUserClassesAccessible() throws Exception {
+		final Field[] fields = WhiteboxImpl.getAllFields(ClassWithChildThatHasInternalState.class);
+		assertThat(fields).isNotEmpty();
+		for (Field field : fields) {
+			assertThat(field.isAccessible()).isTrue();
+		}
 	}
 
 	@Test
