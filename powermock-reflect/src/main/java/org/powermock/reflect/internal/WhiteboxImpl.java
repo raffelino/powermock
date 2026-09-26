@@ -158,7 +158,7 @@ public class WhiteboxImpl {
                 if (checkIfParameterTypesAreSame(method.isVarArgs(), parameterTypes, method.getParameterTypes())) {
                     foundMethods.add(method);
                     if (foundMethods.size() == 1) {
-                        method.setAccessible(true);
+                        trySetAccessible(method);
                     }
                 }
 
@@ -250,7 +250,7 @@ public class WhiteboxImpl {
             final Field[] declaredField = thisType.getDeclaredFields();
             for (Field field : declaredField) {
                 if (fieldName.equals(field.getName())) {
-                    field.setAccessible(true);
+                    trySetAccessible(field);
                     return field;
                 }
             }
@@ -446,6 +446,11 @@ public class WhiteboxImpl {
         }
 
         final Field field = getField(fieldName, where);
+        if (!trySetAccessible(field)) {
+            // JDK field in a package not opened to PowerMock (e.g. Throwable.detailMessage)
+            setField(object, value, field);
+            return;
+        }
         try {
             field.set(object, value);
         } catch (Exception e) {
@@ -544,7 +549,7 @@ public class WhiteboxImpl {
         if (foundField == null) {
             strategy.notFound(originalStartClass, !isClass(object));
         }
-        foundField.setAccessible(true);
+        trySetAccessible(foundField);
         return foundField;
     }
 
@@ -2305,7 +2310,7 @@ public class WhiteboxImpl {
         Field field = null;
         try {
             field = where.getDeclaredField(fieldName);
-            field.setAccessible(true);
+            trySetAccessible(field);
         } catch (NoSuchFieldException e) {
             throw new FieldNotFoundException("Field '" + fieldName + "' was not found in class " + where.getName()
                                                      + ".");
@@ -2326,7 +2331,7 @@ public class WhiteboxImpl {
         }
         Field field = null;
         for (Field currentField : where.getDeclaredFields()) {
-            currentField.setAccessible(true);
+            trySetAccessible(currentField);
             if (currentField.getType().equals(fieldType)) {
                 field = currentField;
                 break;
@@ -2356,10 +2361,10 @@ public class WhiteboxImpl {
 
     private static void setStaticFieldUsingUnsafe(final Field field, final Object newValue) {
         try {
-            field.setAccessible(true);
+            boolean accessible = trySetAccessible(field);
             int fieldModifiersMask = field.getModifiers();
             boolean isFinalModifierPresent = (fieldModifiersMask & Modifier.FINAL) == Modifier.FINAL;
-            if (isFinalModifierPresent) {
+            if (isFinalModifierPresent || !accessible) {
                 AccessController.doPrivileged(new PrivilegedAction<Object>() {
                     @Override
                     public Object run() {
@@ -2387,10 +2392,10 @@ public class WhiteboxImpl {
 
     private static void setFieldUsingUnsafe(final Field field, final Object object, final Object newValue) {
         try {
-            field.setAccessible(true);
+            boolean accessible = trySetAccessible(field);
             int fieldModifiersMask = field.getModifiers();
             boolean isFinalModifierPresent = (fieldModifiersMask & Modifier.FINAL) == Modifier.FINAL;
-            if (isFinalModifierPresent) {
+            if (isFinalModifierPresent || !accessible) {
                 AccessController.doPrivileged(new PrivilegedAction<Object>() {
                     @Override
                     public Object run() {
