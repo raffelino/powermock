@@ -39,6 +39,7 @@ import org.powermock.reflect.internal.proxy.UnproxiedType;
 import org.powermock.reflect.matching.FieldMatchingStrategy;
 
 import java.lang.annotation.Annotation;
+import java.lang.reflect.AccessibleObject;
 import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -1504,8 +1505,7 @@ public class WhiteboxImpl {
 
             });
             for (Method method : declaredMethods) {
-                if(!"finalize".equals(method.getName())) {
-                    method.setAccessible(true);
+                if(!"finalize".equals(method.getName()) && trySetAccessible(method)) {
                     methods.add(method);
                 }
             }
@@ -1513,6 +1513,30 @@ public class WhiteboxImpl {
             thisType = thisType.getSuperclass();
         }
         return methods.toArray(new Method[methods.size()]);
+    }
+
+    /**
+     * Attempts to make {@code accessibleObject} accessible. On Java 9+, JDK
+     * classes whose package is not opened to us throw
+     * {@code java.lang.reflect.InaccessibleObjectException}, a subclass of
+     * {@link RuntimeException} that does not exist prior to Java 9. We can't
+     * reference that type directly since this module must stay Java 8 source
+     * compatible, so it is matched by name and any other runtime exception is
+     * rethrown rather than swallowed.
+     *
+     * @return {@code true} if the object could be made accessible, {@code false}
+     * if access was denied by the module system.
+     */
+    private static boolean trySetAccessible(AccessibleObject accessibleObject) {
+        try {
+            accessibleObject.setAccessible(true);
+            return true;
+        } catch (RuntimeException e) {
+            if ("java.lang.reflect.InaccessibleObjectException".equals(e.getClass().getName())) {
+                return false;
+            }
+            throw e;
+        }
     }
 
     /**
