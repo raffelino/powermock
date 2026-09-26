@@ -573,12 +573,8 @@ public class WhiteboxImpl {
             for (Field field : declaredFields) {
                 if (strategy.matches(field) && hasFieldProperModifier(object, field, onlyInstanceFields)) {
                     // TODO replace by the class
-                    try {
-                        field.setAccessible(true);
+                    if (trySetAccessible(field)) {
                         foundFields.add(field);
-                    } catch (Exception ignored) {
-                        // the InaccessibleObjectException is thrown in Java 9 in case
-                        // if a field is private and a module is not open
                     }
                 }
             }
@@ -1500,7 +1496,7 @@ public class WhiteboxImpl {
 
     /**
      * Get all declared constructors in the class and set accessible to
-     * {@code true}.
+     * {@code true} where the module system allows it.
      *
      * @param clazz The class whose constructors to get.
      * @return All constructors declared in this class hierarchy.
@@ -1509,7 +1505,7 @@ public class WhiteboxImpl {
         Constructor<?>[] declaredConstructors = clazz.getDeclaredConstructors();
         for (Constructor<?> constructor : declaredConstructors) {
             if (!constructor.isAccessible()) {
-                constructor.setAccessible(true);
+                trySetAccessible(constructor);
             }
         }
         return declaredConstructors;
@@ -1587,6 +1583,9 @@ public class WhiteboxImpl {
      * Get all fields in a class hierarchy! Both declared an non-declared (no
      * duplicates).
      *
+     * Fields of JDK classes in packages that are not opened to PowerMock are
+     * returned as well but stay inaccessible on Java 9+.
+     *
      * @param clazz The class whose fields to get.
      * @return All fields declared in this class hierarchy.
      */
@@ -1598,10 +1597,11 @@ public class WhiteboxImpl {
 
         Class<?> thisType = clazz;
 
-        while (thisType != null) {
+        // java.lang.Object declares no fields, no need to look at it
+        while (thisType != null && thisType.getSuperclass() != null) {
             final Field[] declaredFields = thisType.getDeclaredFields();
             for (Field field : declaredFields) {
-                field.setAccessible(true);
+                trySetAccessible(field);
                 fields.add(field);
             }
             thisType = thisType.getSuperclass();
