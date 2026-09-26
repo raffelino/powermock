@@ -576,9 +576,10 @@ public class WhiteboxImpl {
                     try {
                         field.setAccessible(true);
                         foundFields.add(field);
-                    } catch (Exception ignored) {
-                        // the InaccessibleObjectException is thrown in Java 9 in case
-                        // if a field is private and a module is not open
+                    } catch (Throwable ignored) {
+                        // defensive: a field that cannot be made accessible (e.g. the
+                        // InaccessibleObjectException on Java 9+ for a package that is not
+                        // opened) is simply not part of the result
                     }
                 }
             }
@@ -1500,7 +1501,7 @@ public class WhiteboxImpl {
 
     /**
      * Get all declared constructors in the class and set accessible to
-     * {@code true}.
+     * {@code true} where the module system allows it.
      *
      * @param clazz The class whose constructors to get.
      * @return All constructors declared in this class hierarchy.
@@ -1509,7 +1510,12 @@ public class WhiteboxImpl {
         Constructor<?>[] declaredConstructors = clazz.getDeclaredConstructors();
         for (Constructor<?> constructor : declaredConstructors) {
             if (!constructor.isAccessible()) {
-                constructor.setAccessible(true);
+                try {
+                    constructor.setAccessible(true);
+                } catch (Throwable ignored) {
+                    // defensive: constructors of JDK classes in packages that are not
+                    // opened to PowerMock stay inaccessible on Java 9+
+                }
             }
         }
         return declaredConstructors;
@@ -1587,6 +1593,9 @@ public class WhiteboxImpl {
      * Get all fields in a class hierarchy! Both declared an non-declared (no
      * duplicates).
      *
+     * Fields of JDK classes in packages that are not opened to PowerMock are
+     * returned as well but stay inaccessible on Java 9+.
+     *
      * @param clazz The class whose fields to get.
      * @return All fields declared in this class hierarchy.
      */
@@ -1601,7 +1610,12 @@ public class WhiteboxImpl {
         while (thisType != null) {
             final Field[] declaredFields = thisType.getDeclaredFields();
             for (Field field : declaredFields) {
-                field.setAccessible(true);
+                try {
+                    field.setAccessible(true);
+                } catch (Throwable ignored) {
+                    // defensive: fields of JDK classes in packages that are not
+                    // opened to PowerMock stay inaccessible on Java 9+
+                }
                 fields.add(field);
             }
             thisType = thisType.getSuperclass();
