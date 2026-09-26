@@ -158,7 +158,7 @@ public class WhiteboxImpl {
                 if (checkIfParameterTypesAreSame(method.isVarArgs(), parameterTypes, method.getParameterTypes())) {
                     foundMethods.add(method);
                     if (foundMethods.size() == 1) {
-                        method.setAccessible(true);
+                        trySetAccessible(method);
                     }
                 }
 
@@ -216,7 +216,7 @@ public class WhiteboxImpl {
             for (Method method : methodsToTraverse) {
                 if (methodName.equals(method.getName())
                             && checkIfParameterTypesAreSame(method.isVarArgs(), parameterTypes, method.getParameterTypes())) {
-                    method.setAccessible(true);
+                    trySetAccessible(method);
                     return method;
                 }
             }
@@ -250,7 +250,7 @@ public class WhiteboxImpl {
             final Field[] declaredField = thisType.getDeclaredFields();
             for (Field field : declaredField) {
                 if (fieldName.equals(field.getName())) {
-                    field.setAccessible(true);
+                    trySetAccessible(field);
                     return field;
                 }
             }
@@ -321,7 +321,7 @@ public class WhiteboxImpl {
         Class<?> unmockedType = WhiteboxImpl.getOriginalUnmockedType(type);
         try {
             final Constructor<?> constructor = unmockedType.getDeclaredConstructor(parameterTypes);
-            constructor.setAccessible(true);
+            trySetAccessible(constructor);
             return constructor;
         } catch (RuntimeException e) {
             throw e;
@@ -544,7 +544,7 @@ public class WhiteboxImpl {
         if (foundField == null) {
             strategy.notFound(originalStartClass, !isClass(object));
         }
-        foundField.setAccessible(true);
+        trySetAccessible(foundField);
         return foundField;
     }
 
@@ -567,14 +567,11 @@ public class WhiteboxImpl {
             final Field[] declaredFields = startClass.getDeclaredFields();
             for (Field field : declaredFields) {
                 if (strategy.matches(field) && hasFieldProperModifier(object, field, onlyInstanceFields)) {
-                    // TODO replace by the class
-                    try {
-                        field.setAccessible(true);
+                    if (trySetAccessible(field)) {
                         foundFields.add(field);
-                    } catch (Exception ignored) {
-                        // the InaccessibleObjectException is thrown in Java 9 in case
-                        // if a field is private and a module is not open
                     }
+                    // If trySetAccessible returns false, the field is inaccessible on JDK 17+
+                    // (e.g., restricted module fields), so we skip it gracefully
                 }
             }
             if (!checkHierarchy) {
@@ -670,7 +667,7 @@ public class WhiteboxImpl {
         Field field = null;
         try {
             field = where.getDeclaredField(fieldName);
-            field.setAccessible(true);
+            trySetAccessible(field);
             return (T) field.get(object);
         } catch (NoSuchFieldException e) {
             throw new FieldNotFoundException("Field '" + fieldName + "' was not found in class " + where.getName()
@@ -1449,7 +1446,7 @@ public class WhiteboxImpl {
         if (constructor == null) {
             throw new IllegalArgumentException("Constructor cannot be null");
         }
-        constructor.setAccessible(true);
+        trySetAccessible(constructor);
 
         T createdObject = null;
         try {
@@ -1504,7 +1501,7 @@ public class WhiteboxImpl {
         Constructor<?>[] declaredConstructors = clazz.getDeclaredConstructors();
         for (Constructor<?> constructor : declaredConstructors) {
             if (!constructor.isAccessible()) {
-                constructor.setAccessible(true);
+                trySetAccessible(constructor);
             }
         }
         return declaredConstructors;
@@ -1596,7 +1593,7 @@ public class WhiteboxImpl {
         while (thisType != null) {
             final Field[] declaredFields = thisType.getDeclaredFields();
             for (Field field : declaredFields) {
-                field.setAccessible(true);
+                trySetAccessible(field);
                 fields.add(field);
             }
             thisType = thisType.getSuperclass();
@@ -2305,7 +2302,7 @@ public class WhiteboxImpl {
         Field field = null;
         try {
             field = where.getDeclaredField(fieldName);
-            field.setAccessible(true);
+            trySetAccessible(field);
         } catch (NoSuchFieldException e) {
             throw new FieldNotFoundException("Field '" + fieldName + "' was not found in class " + where.getName()
                                                      + ".");
@@ -2326,7 +2323,7 @@ public class WhiteboxImpl {
         }
         Field field = null;
         for (Field currentField : where.getDeclaredFields()) {
-            currentField.setAccessible(true);
+            trySetAccessible(currentField);
             if (currentField.getType().equals(fieldType)) {
                 field = currentField;
                 break;
@@ -2356,10 +2353,11 @@ public class WhiteboxImpl {
 
     private static void setStaticFieldUsingUnsafe(final Field field, final Object newValue) {
         try {
-            field.setAccessible(true);
+            boolean isAccessible = trySetAccessible(field);
             int fieldModifiersMask = field.getModifiers();
             boolean isFinalModifierPresent = (fieldModifiersMask & Modifier.FINAL) == Modifier.FINAL;
-            if (isFinalModifierPresent) {
+            // Use Unsafe if the field is final or inaccessible
+            if (isFinalModifierPresent || !isAccessible) {
                 AccessController.doPrivileged(new PrivilegedAction<Object>() {
                     @Override
                     public Object run() {
@@ -2387,10 +2385,11 @@ public class WhiteboxImpl {
 
     private static void setFieldUsingUnsafe(final Field field, final Object object, final Object newValue) {
         try {
-            field.setAccessible(true);
+            boolean isAccessible = trySetAccessible(field);
             int fieldModifiersMask = field.getModifiers();
             boolean isFinalModifierPresent = (fieldModifiersMask & Modifier.FINAL) == Modifier.FINAL;
-            if (isFinalModifierPresent) {
+            // Use Unsafe if the field is final or inaccessible
+            if (isFinalModifierPresent || !isAccessible) {
                 AccessController.doPrivileged(new PrivilegedAction<Object>() {
                     @Override
                     public Object run() {
@@ -2418,7 +2417,7 @@ public class WhiteboxImpl {
     
     private static Unsafe getUnsafe() throws IllegalArgumentException, IllegalAccessException, NoSuchFieldException, SecurityException {
         Field field1 = Unsafe.class.getDeclaredField("theUnsafe");
-        field1.setAccessible(true);
+        trySetAccessible(field1);
         Unsafe unsafe = (Unsafe) field1.get(null);
         return unsafe;
     }
@@ -2700,12 +2699,15 @@ public class WhiteboxImpl {
             }
             boolean accessible = field.isAccessible();
             try {
-                field.setAccessible(true);
-                copyValue(from, mock, field);
+                if (trySetAccessible(field) || accessible) {
+                    copyValue(from, mock, field);
+                }
             } catch (Exception ignored) {
                 //Ignore - be lenient - if some field cannot be copied then let's be it
             } finally {
-                field.setAccessible(accessible);
+                if (!trySetAccessible(field)) {
+                    field.setAccessible(accessible);
+                }
             }
         }
     }
