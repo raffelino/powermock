@@ -18,6 +18,7 @@ package org.powermock.core.classloader;
 import javassist.ByteArrayClassPath;
 import javassist.ClassPool;
 import javassist.CtClass;
+import org.powermock.core.GeneratedClassDefiner;
 import javassist.CtMethod;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.dynamic.DynamicType.Builder;
@@ -319,7 +320,7 @@ public class MockClassLoaderTest {
                 ClassPool cp = ClassPool.getDefault();
                 final CtClass ctClass = cp.makeClass("my.ABCTestClass");
                 classBytes = ctClass.toBytecode();
-                clazz = ctClass.toClass();
+                clazz = GeneratedClassDefiner.define(ctClass.getName(), classBytes, MockClassLoaderTest.class.getClassLoader(), null);
             } catch (Exception e) {
                 throw new RuntimeException("Problem constructing custom class", e);
             }

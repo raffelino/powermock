@@ -18,6 +18,8 @@ package org.powermock.api.mockito.internal.invocation;
 import org.powermock.core.spi.support.InvocationSubstitute;
 import org.powermock.reflect.Whitebox;
 
+import org.mockito.exceptions.base.MockitoAssertionError;
+
 import java.util.regex.Matcher;
 
 public class InvocationControlAssertionError {
@@ -29,7 +31,7 @@ public class InvocationControlAssertionError {
     private static final String UNDESIRED_INVOCATION_TEXT = " Undesired invocation:";
     private static final String POWER_MOCKITO_CLASS_NAME = "org.powermock.api.mockito.PowerMockito";
 
-    public static void updateErrorMessageForVerifyNoMoreInteractions(AssertionError errorToUpdate) {
+    public static AssertionError updateErrorMessageForVerifyNoMoreInteractions(AssertionError errorToUpdate) {
         /*
          * VerifyNoMoreInteractions failed, we need to update the error message.
          */
@@ -52,7 +54,7 @@ public class InvocationControlAssertionError {
 
         if (verifyNoMoreInteractionsInvocation == null) {
             // Something unexpected happened, just return
-            return;
+            return errorToUpdate;
         }
         String message = errorToUpdate.getMessage();
         StringBuilder builder = new StringBuilder();
@@ -63,17 +65,42 @@ public class InvocationControlAssertionError {
         builder.replace(startOfVerifyNoMoreInteractionsInvocation, endOfVerifyNoMoreInteractionsInvocation,
                         verifyNoMoreInteractionsInvocation);
         builder.delete(builder.indexOf("\n", endOfVerifyNoMoreInteractionsInvocation + 1), builder.lastIndexOf("\n"));
-        Whitebox.setInternalState(errorToUpdate, "detailMessage", builder.toString());
+        return withMessage(errorToUpdate, builder.toString());
     }
 
-    public static void updateErrorMessageForMethodInvocation(AssertionError errorToUpdate) {
+    public static AssertionError updateErrorMessageForMethodInvocation(AssertionError errorToUpdate) {
         /*
          * We failed to verify the new substitution mock. This happens when, for
          * example, the user has done something like
          * whenNew(MyClass.class).thenReturn(myMock).times(3) when in fact an
          * instance of MyClass has been created less or more times than 3.
          */
-        Whitebox.setInternalState(errorToUpdate, "detailMessage", "\n" + changeMessageContent(errorToUpdate.getMessage()));
+        return withMessage(errorToUpdate, "\n" + changeMessageContent(errorToUpdate.getMessage()));
+    }
+
+    /**
+     * Replaces the message of {@code error}. Where the module system forbids writing
+     * {@code Throwable.detailMessage} (JDK 16+, java.lang not opened), a new
+     * error of the same type (or a {@link MockitoAssertionError}) with the same stack trace is returned instead.
+     */
+    private static AssertionError withMessage(AssertionError error, String message) {
+        try {
+            Whitebox.setInternalState(error, "detailMessage", message);
+        } catch (RuntimeException e) {
+            // field not accessible, handled below
+        }
+        if (message.equals(error.getMessage())) {
+            return error;
+        }
+        AssertionError replacement;
+        try {
+            // keep the concrete type (e.g. TooFewActualInvocations); Mockito's errors have a (String) constructor
+            replacement = error.getClass().getConstructor(String.class).newInstance(message);
+        } catch (Exception e) {
+            replacement = new MockitoAssertionError(message);
+        }
+        replacement.setStackTrace(error.getStackTrace());
+        return replacement;
     }
 
     public static void throwAssertionErrorForNewSubstitutionFailure(AssertionError oldError, Class<?> type) {
