@@ -93,8 +93,8 @@ public class PowerMockMakerTestCase {
         }
         
         @Override
-        public <T> T createMock(final MockCreationSettings<T> settings, final MockHandler handler) {
-            return (T) mock;
+        public Object createMock(final MockCreationSettings settings, final MockHandler handler) {
+            return mock;
         }
         
         @Override
