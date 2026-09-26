@@ -960,4 +960,17 @@ public class WhiteBoxTest {
         assertEquals(expected, state.getFinalString());
         assertEquals(expected, Whitebox.getInternalState(state, "finalString"));
     }
+
+    @Test
+    public void getMethodsOfJdkClassInNonOpenedPackageDoesNotThrowAndUserMethodsStayAccessible() {
+        // java.util.logging is not opened to the unnamed module on JDK 9+; private methods there cannot be made accessible
+        org.junit.Assert.assertTrue(WhiteboxImpl.getAllMethods(java.util.logging.Logger.class).length > 0);
+        org.junit.Assert.assertTrue(WhiteboxImpl.getMethods(java.util.logging.Logger.class, "getLogger").length > 0);
+
+        for (java.lang.reflect.Method method : WhiteboxImpl.getAllMethods(ClassWithPrivateMethods.class)) {
+            if (method.getDeclaringClass() == ClassWithPrivateMethods.class) {
+                org.junit.Assert.assertTrue(method.isAccessible());
+            }
+        }
+    }
 }

@@ -39,6 +39,7 @@ import org.powermock.reflect.internal.proxy.UnproxiedType;
 import org.powermock.reflect.matching.FieldMatchingStrategy;
 
 import java.lang.annotation.Annotation;
+import java.lang.reflect.AccessibleObject;
 import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -1505,7 +1506,7 @@ public class WhiteboxImpl {
             });
             for (Method method : declaredMethods) {
                 if(!"finalize".equals(method.getName())) {
-                    method.setAccessible(true);
+                    setAccessibleUnlessModuleDenies(method);
                     methods.add(method);
                 }
             }
@@ -1513,6 +1514,22 @@ public class WhiteboxImpl {
             thisType = thisType.getSuperclass();
         }
         return methods.toArray(new Method[methods.size()]);
+    }
+
+    /**
+     * Calls {@code setAccessible(true)}, but tolerates the JDK 9+ module system refusing it
+     * (InaccessibleObjectException, e.g. private methods of java.base classes in packages not
+     * opened to us). Such a member stays in the result, just not accessible. Any other exception
+     * is rethrown. The exception is matched by name to stay Java 8 source compatible.
+     */
+    private static void setAccessibleUnlessModuleDenies(AccessibleObject object) {
+        try {
+            object.setAccessible(true);
+        } catch (RuntimeException e) {
+            if (!"java.lang.reflect.InaccessibleObjectException".equals(e.getClass().getName())) {
+                throw e;
+            }
+        }
     }
 
     /**
@@ -1529,7 +1546,7 @@ public class WhiteboxImpl {
         Set<Method> methods = new LinkedHashSet<Method>();
 
         for (Method method : clazz.getMethods()) {
-            method.setAccessible(true);
+            setAccessibleUnlessModuleDenies(method);
             methods.add(method);
         }
         return methods.toArray(new Method[0]);
@@ -1753,7 +1770,7 @@ public class WhiteboxImpl {
         for (Method method : allMethods) {
             for (String methodName : methodNames) {
                 if (method.getName().equals(methodName)) {
-                    method.setAccessible(true);
+                    setAccessibleUnlessModuleDenies(method);
                     methodsToMock.add(method);
                 }
             }
