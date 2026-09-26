@@ -1505,7 +1505,7 @@ public class WhiteboxImpl {
             });
             for (Method method : declaredMethods) {
                 if(!"finalize".equals(method.getName())) {
-                    method.setAccessible(true);
+                    trySetAccessible(method);
                     methods.add(method);
                 }
             }
@@ -1513,6 +1513,29 @@ public class WhiteboxImpl {
             thisType = thisType.getSuperclass();
         }
         return methods.toArray(new Method[methods.size()]);
+    }
+
+    /**
+     * Attempts to make the given accessible object (method, field, constructor) accessible.
+     * <p>
+     * On Java 9+ this throws {@code java.lang.reflect.InaccessibleObjectException} (a subclass
+     * of {@link RuntimeException}) when the member belongs to a JDK class in a module that is
+     * not opened for reflection (e.g. a private method inherited from a non-opened java.*
+     * superclass). That specific failure is swallowed so that walking a class hierarchy for a
+     * user (non-JDK) class keeps working exactly as before; the member is simply left as it was
+     * (not forced accessible) since it is a JDK-internal member the caller never actually needed
+     * to invoke. Any other exception is rethrown, so this never masks unrelated failures.
+     *
+     * @param accessibleObject the member to make accessible
+     */
+    private static void trySetAccessible(java.lang.reflect.AccessibleObject accessibleObject) {
+        try {
+            accessibleObject.setAccessible(true);
+        } catch (RuntimeException e) {
+            if (!"java.lang.reflect.InaccessibleObjectException".equals(e.getClass().getName())) {
+                throw e;
+            }
+        }
     }
 
     /**
