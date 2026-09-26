@@ -60,7 +60,15 @@ public class ClassReplicaCreator {
                         code, newClass);
             }
 
-            return (Class<T>) newClass.toClass(this.getClass().getClassLoader(), this.getClass().getProtectionDomain());
+            byte[] bytecode = newClass.toBytecode();
+            return (Class<T>) DefineClassHelper.defineClass(
+                    newClass.getName(),
+                    bytecode,
+                    0,
+                    bytecode.length,
+                    this.getClass().getClassLoader(),
+                    this.getClass().getProtectionDomain()
+            );
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -105,7 +113,15 @@ public class ClassReplicaCreator {
                 CtConstructor copy = CtNewConstructor.copy(ctConstructor, newClass, null);
                 newClass.addConstructor(copy);
             }
-            return (Class<T>) newClass.toClass(this.getClass().getClassLoader(), this.getClass().getProtectionDomain());
+            byte[] bytecode = newClass.toBytecode();
+            return (Class<T>) DefineClassHelper.defineClass(
+                    newClass.getName(),
+                    bytecode,
+                    0,
+                    bytecode.length,
+                    this.getClass().getClassLoader(),
+                    this.getClass().getProtectionDomain()
+            );
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
