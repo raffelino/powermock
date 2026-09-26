@@ -20,7 +20,7 @@ ext{
     assertjVersion = "2.6.0"
     cglibVersion = "3.2.9"
     objenesisVersion = "3.2"
-    javassistVersion = "3.27.0-GA"
+    javassistVersion = "3.30.2-GA"
     junitVersion = "4.12"
     junitRulesVersion = "4.8.2"
     testngVersion = "6.9.10"
