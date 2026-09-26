@@ -14,9 +14,9 @@ buildscript {
 ext{
     gradleScriptDir = "${rootProject.projectDir}/gradle"
 
-    // Mockito 5 needs Java 11; Java 8 builds stay on the last Java-8-capable Mockito line
-    mockito5 = JavaVersion.current().isJava11Compatible()
-    byteBuddy = mockito5 ? "1.17.7" : "1.12.7"
+    // Declared (and therefore published) versions: the Java 8 baseline, fixed regardless of the JDK
+    // that runs the build/release, so POMs never hand Java 8 users Mockito 5 / Byte Buddy 1.17.
+    byteBuddy = "1.12.7"
     easymockVersion = "4.0.1"
     hamcrestVersion = "1.3"
     assertjVersion = "2.6.0"
@@ -27,7 +27,12 @@ ext{
     junitRulesVersion = "4.8.2"
     testngVersion = "6.9.10"
     xstreamVersion = "1.4.21"
-    mockitoVersion = mockito5 ? "5.24.0" : "4.3.1"
+    mockitoVersion = "4.3.1"
+    // Resolved (compile/test) versions: Mockito 5 needs Java 11, so it is used when Gradle runs on Java 11+.
+    // Applied via resolutionStrategy below, which changes classpaths but not the published dependency versions.
+    mockito5 = JavaVersion.current().isJava11Compatible()
+    byteBuddyResolved = mockito5 ? "1.17.7" : byteBuddy
+    mockitoResolvedVersion = mockito5 ? "5.24.0" : mockitoVersion
     servletVersion = "2.5"
     jacocoVersion = "0.7.7.201606060606"
     eclipseJdt = "3.3.0-v_771"
@@ -37,6 +42,18 @@ ext{
 
 // shipkit (Bintray-based release tooling, dead since Bintray shutdown) used to apply 'java' to all projects
 allprojects { apply plugin: 'java-library' }
+
+allprojects {
+    configurations.all {
+        resolutionStrategy.eachDependency { details ->
+            if (details.requested.group == 'org.mockito' && details.requested.name == 'mockito-core') {
+                details.useVersion mockitoResolvedVersion
+            } else if (details.requested.group == 'net.bytebuddy') {
+                details.useVersion byteBuddyResolved
+            }
+        }
+    }
+}
 
 description = 'PowerMock allows you to unit test code normally regarded as untestable.\n' +
         '        For instance it is possible to mock static methods, remove static initializers, allow mocking without dependency\n' +
