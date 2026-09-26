@@ -1505,7 +1505,7 @@ public class WhiteboxImpl {
             });
             for (Method method : declaredMethods) {
                 if(!"finalize".equals(method.getName())) {
-                    method.setAccessible(true);
+                    makeAccessibleUnlessModuleDenies(method);
                     methods.add(method);
                 }
             }
@@ -1513,6 +1513,29 @@ public class WhiteboxImpl {
             thisType = thisType.getSuperclass();
         }
         return methods.toArray(new Method[methods.size()]);
+    }
+
+    /**
+     * Calls {@code setAccessible(true)} on the method. On Java 9+ the module system may refuse this for
+     * members of JDK classes in packages that are not opened to us ({@code InaccessibleObjectException}).
+     * Such a method is kept but left inaccessible, so the class hierarchy can still be scanned; any other
+     * failure (or a refusal for a non-JDK class) is rethrown unchanged.
+     */
+    private static void makeAccessibleUnlessModuleDenies(Method method) {
+        try {
+            method.setAccessible(true);
+        } catch (RuntimeException e) {
+            // Referenced by name because the main code must stay Java 8 compatible.
+            if (!"java.lang.reflect.InaccessibleObjectException".equals(e.getClass().getName())
+                    || method.getDeclaringClass().getClassLoader() != null
+                    && !method.getDeclaringClass().getName().startsWith("java.")
+                    && !method.getDeclaringClass().getName().startsWith("javax.")
+                    && !method.getDeclaringClass().getName().startsWith("sun.")
+                    && !method.getDeclaringClass().getName().startsWith("jdk.")
+                    && !method.getDeclaringClass().getName().startsWith("com.sun.")) {
+                throw e;
+            }
+        }
     }
 
     /**
@@ -1753,7 +1776,7 @@ public class WhiteboxImpl {
         for (Method method : allMethods) {
             for (String methodName : methodNames) {
                 if (method.getName().equals(methodName)) {
-                    method.setAccessible(true);
+                    makeAccessibleUnlessModuleDenies(method);
                     methodsToMock.add(method);
                 }
             }

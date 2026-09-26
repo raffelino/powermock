@@ -100,4 +100,36 @@ public class WhiteboxImplTest {
 		);
 		assertEquals(methods[0], method);
 	}
+
+	/**
+	 * java.io is not opened to unnamed modules on JDK 9+, so the private methods of BufferedReader
+	 * cannot be made accessible there. Scanning the hierarchy must still work and the private
+	 * methods of the user class must still be accessible and invocable.
+	 */
+	@Test
+	public void getAllMethodsScansJdkSuperclassInNonOpenedPackageAndKeepsUserPrivateMethodsAccessible() throws Exception {
+		Method[] methods = WhiteboxImpl.getAllMethods(ReaderSubclassWithPrivateMethod.class);
+
+		Method userPrivate = null;
+		List<String> methodNames = new ArrayList<String>();
+		for (Method method : methods) {
+			methodNames.add(method.getName());
+			if (method.getName().equals("secret")) {
+				userPrivate = method;
+			}
+		}
+		assertThat(methodNames).contains("secret", "readLine", "fill");
+		assertThat(userPrivate.isAccessible()).isTrue();
+		assertEquals("secret", userPrivate.invoke(new ReaderSubclassWithPrivateMethod()));
+	}
+
+	static class ReaderSubclassWithPrivateMethod extends java.io.BufferedReader {
+		ReaderSubclassWithPrivateMethod() {
+			super(new java.io.StringReader(""));
+		}
+
+		private String secret() {
+			return "secret";
+		}
+	}
 }
