@@ -25,7 +25,9 @@ import javassist.CtNewConstructor;
 import javassist.CtNewMethod;
 import javassist.Modifier;
 import javassist.NotFoundException;
+import org.powermock.core.classloader.MockClassLoader;
 
+import java.security.ProtectionDomain;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
@@ -60,7 +62,7 @@ public class ClassReplicaCreator {
                         code, newClass);
             }
 
-            return (Class<T>) newClass.toClass(this.getClass().getClassLoader(), this.getClass().getProtectionDomain());
+            return (Class<T>) defineClass(newClass, this.getClass());
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -105,7 +107,7 @@ public class ClassReplicaCreator {
                 CtConstructor copy = CtNewConstructor.copy(ctConstructor, newClass, null);
                 newClass.addConstructor(copy);
             }
-            return (Class<T>) newClass.toClass(this.getClass().getClassLoader(), this.getClass().getProtectionDomain());
+            return (Class<T>) defineClass(newClass, this.getClass());
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -121,6 +123,32 @@ public class ClassReplicaCreator {
         CtField f = CtField.make(String.format("private %s %s = null;", delegator.getClass().getName(),
                 POWERMOCK_INSTANCE_DELEGATOR_FIELD_NAME), replicaClass);
         replicaClass.addField(f);
+    }
+
+    /**
+     * Defines the generated class in {@code owner}'s loader if that is a {@link MockClassLoader} (public
+     * defineClass), otherwise in a fresh child loader of it. Unlike {@link CtClass#toClass(ClassLoader, ProtectionDomain)}
+     * this needs no reflective access to {@code ClassLoader.defineClass}, which JDK 16+ denies unless
+     * java.lang is opened to the caller.
+     */
+    static Class<?> defineClass(CtClass ctClass, Class<?> owner) throws Exception {
+        final byte[] bytes = ctClass.toBytecode();
+        final ClassLoader loader = owner.getClassLoader();
+        final ProtectionDomain protectionDomain = owner.getProtectionDomain();
+        if (loader instanceof MockClassLoader) {
+            return ((MockClassLoader) loader).defineClass(ctClass.getName(), protectionDomain, bytes);
+        }
+        return new DefiningClassLoader(loader).define(ctClass.getName(), bytes, protectionDomain);
+    }
+
+    private static class DefiningClassLoader extends ClassLoader {
+        DefiningClassLoader(ClassLoader parent) {
+            super(parent);
+        }
+
+        Class<?> define(String name, byte[] bytes, ProtectionDomain protectionDomain) {
+            return defineClass(name, bytes, 0, bytes.length, protectionDomain);
+        }
     }
 
     private <T> String generateReplicaClassName(final Class<T> clazz) {
