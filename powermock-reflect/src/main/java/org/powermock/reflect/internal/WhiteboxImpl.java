@@ -2353,10 +2353,11 @@ public class WhiteboxImpl {
 
     private static void setStaticFieldUsingUnsafe(final Field field, final Object newValue) {
         try {
-            trySetAccessible(field);
+            boolean isAccessible = trySetAccessible(field);
             int fieldModifiersMask = field.getModifiers();
             boolean isFinalModifierPresent = (fieldModifiersMask & Modifier.FINAL) == Modifier.FINAL;
-            if (isFinalModifierPresent) {
+            // Use Unsafe if the field is final or inaccessible
+            if (isFinalModifierPresent || !isAccessible) {
                 AccessController.doPrivileged(new PrivilegedAction<Object>() {
                     @Override
                     public Object run() {
@@ -2384,10 +2385,11 @@ public class WhiteboxImpl {
 
     private static void setFieldUsingUnsafe(final Field field, final Object object, final Object newValue) {
         try {
-            trySetAccessible(field);
+            boolean isAccessible = trySetAccessible(field);
             int fieldModifiersMask = field.getModifiers();
             boolean isFinalModifierPresent = (fieldModifiersMask & Modifier.FINAL) == Modifier.FINAL;
-            if (isFinalModifierPresent) {
+            // Use Unsafe if the field is final or inaccessible
+            if (isFinalModifierPresent || !isAccessible) {
                 AccessController.doPrivileged(new PrivilegedAction<Object>() {
                     @Override
                     public Object run() {
