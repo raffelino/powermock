@@ -960,4 +960,15 @@ public class WhiteBoxTest {
         assertEquals(expected, state.getFinalString());
         assertEquals(expected, Whitebox.getInternalState(state, "finalString"));
     }
+
+    @Test
+    public void canSetPrivateFieldOfJdkClassInPackageNotOpened() {
+        Exception exception = new Exception("original");
+
+        Whitebox.setInternalState(exception, "detailMessage", "changed");
+        assertEquals("changed", exception.getMessage());
+
+        Whitebox.setInternalState(exception, "detailMessage", "changed again", Throwable.class);
+        assertEquals("changed again", exception.getMessage());
+    }
 }
