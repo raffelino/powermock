@@ -343,6 +343,15 @@ project(":powermock-modules:powermock-module-testng-agent") {
     }
 }
 
+project(":powermock-modules:powermock-module-junit5") {
+    description = "PowerMock module for JUnit Jupiter (JUnit 5)."
+
+    dependencies {
+        api(project(":powermock-core"))
+        api("org.junit.jupiter:junit-jupiter-api:5.14.4")
+    }
+}
+
 configure(publishableModules) { project ->
     apply from: "${gradleScriptDir}/release/publish-jar.gradle"
 
