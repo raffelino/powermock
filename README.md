@@ -7,38 +7,37 @@
 
 ## Revival (2026)
 
-This is a fork of [powermock/powermock](https://github.com/powermock/powermock), revived as the hands-on project of a book on agent-assisted software development. It is **not** upstream and does not publish releases. The branch `book/consolidated` holds the consolidated state of the book's labs 0–8 (PR #10 against `release/2.x`).
+This is a fork of [powermock/powermock](https://github.com/powermock/powermock), revived as the hands-on project of a book on agent-assisted software development. It is **not** upstream and does not publish releases. The branch `book/consolidated` holds the consolidated state of the book's labs 0–8 (PR #10 against `release/2.x`); `revival/jdk17-21-green` makes all four CI cells green (EasyMock 5, opens in the build).
 
 ### What works
 
-Local verification of `book/consolidated` (2026-09-27) (`./gradlew clean test --continue`, serial). "Opens" = JVM add-opens options for `java.base/java.lang`, `java.base/java.util`, `java.base/java.lang.reflect`, `java.desktop/java.awt.font`, passed via an init script (not part of the build).
+Local verification of `revival/jdk17-21-green` (2026-09-27) (`./gradlew clean test --continue`, serial, no init script). On Java 9+ the build itself passes `--add-opens java.base/java.lang=ALL-UNNAMED` and `--add-opens java.base/java.util=ALL-UNNAMED` to the test JVMs (see `build.gradle`); Java 8 runs unchanged.
 
 | JDK | Tests | Pass | Fail | Skip |
 |---|---|---|---|---|
-| 8 | 1654 | 1523 | 1 | 130 |
-| 11 | 1645 | 1515 | 1 | 129 |
-| 17 + opens | 1645 | 1519 | 1 | 125 |
-| 17, no opens | 1648 | 1123 | 389 | 136 |
-| 21 + opens | 1645 | 1502 | 12 | 131 |
+| 8 | 1654 | 1524 | 0 | 130 |
+| 11 | 1645 | 1516 | 0 | 129 |
+| 17 | 1645 | 1520 | 0 | 125 |
+| 21 | 1645 | 1514 | 0 | 131 |
 
-On every JDK: `tests/mockito/*` 668 tests, 0 failures; `tests/junit5` 18/18. The remaining failures are listed below.
+On every JDK: `tests/mockito/*` 668 tests, 0 failures; `tests/junit5` 18/18; all `tests/easymock/*` modules green (EasyMock 5.7.0).
 
-CI (`.github/workflows/build.yml`) runs JDK 8, 11, 17 and 21 without opens; 17 and 21 are non-blocking.
+CI (`.github/workflows/build.yml`) runs JDK 8, 11, 17 and 21; all four cells are blocking.
 
-Mockito version depends on the JVM that runs Gradle: JDK 8 builds against Mockito 4.3.1 (Byte Buddy 1.14.11), JDK 11+ against Mockito 5.24.0 (Byte Buddy 1.17.7). Published artifacts follow the build JVM. The recommended release build is JDK 11+; Java 8 users then have to pin Mockito 4.x themselves, because Mockito 5 requires Java 11.
+Mockito version depends on the JVM that runs Gradle: JDK 8 builds against Mockito 4.3.1 (Byte Buddy 1.14.11), JDK 11+ against Mockito 5.24.0 (Byte Buddy 1.17.7). Published artifacts follow the build JVM. The recommended release build is JDK 11+; Java 8 users then have to pin Mockito 4.x themselves, because Mockito 5 requires Java 11. EasyMock 5.7.0 brings Byte Buddy 1.18.12 and Objenesis 3.6, which win dependency resolution in every module that has EasyMock on the classpath (on JDK 8 too).
 
 ### Known limitations
 
-- **JDK 21 is supported only with opens** (the set above); it is verified only in that configuration.
-- **EasyMock modules are not supported on JDK 17 without opens** (cglib inside EasyMock; about 380 failures in `tests/easymock/*` and `powermock-module-junit4`). On JDK 21 with opens, 11 EasyMock tests still fail. Fixing this needs EasyMock 5, which changes messages that tests assert on; not done.
+- **PowerMock on Java 17+ needs `--add-opens java.base/java.lang=ALL-UNNAMED`** in the user's test JVM (javassist/cglib `ClassLoader.defineClass`, EasyMock replicas of final system classes). `java.base/java.util` is only needed by this repository's own tests (system-rules `EnvironmentVariables`). Without opens, JDK 17/21 are not supported.
+- **EasyMock API: sealed system classes are mocked through a replica.** JDK 21 seals e.g. `java.net.InetAddress` and `java.io.Console`; a subclass mock is impossible, so PowerMock uses the same replica path it uses for final `java.*` classes: the mock is an Objenesis instance of the real type, stubbing works only in classes prepared with `@PrepareForTest`, and it must be replayed/verified through `PowerMock`, not plain `EasyMock`. On JDK 17 and older these classes are still subclass mocks. Sealed classes outside `java.*` and the Mockito API are not covered.
+- **EasyMock 5 message format:** `Unexpected method call` messages now read `EasyMock for class X -> X.m(..)` and no longer end with `:`. PowerMock's `expectNew` messages keep the old form (the internal substitute mock is stripped).
+- `PowerMock.isEasyMocked` (nice replay/verify mode) still checks for cglib proxies and does not recognise EasyMock class mocks; this was already the case with EasyMock 4.x (repackaged cglib).
 - **`powermock-module-junit5` (JUnit Jupiter) is experimental.** It passes the 18 acceptance tests in `tests/junit5`, nothing more. Not supported: `@Mock`/`@InjectMocks` field injection, constructor/parameter injection, `@Nested` classes. Interaction with other Jupiter extensions is untested.
 - Requirement tests that need a SecurityManager are skipped on JDK 18+ (JEP 411); tests that expect closed JDK internals are skipped where `java.util.concurrent` is open (JDK 8, JDK 9–15 default).
 
 ### Known failing tests
 
-- `powermock-core` `ClassReplicaCreatorTest.should_create_replica_of_final_system_class` (all JDKs): the test pins the class name prefix and class loader of an abandoned implementation. A design-neutral rewrite is decided but not yet committed (it removes assertions, which the repository's harness blocks without the author's sign-off).
-- JDK 17 without opens, outside EasyMock: `ProxyFrameworksTest` (4, cglib), `MockClassLoaderTest.should_load_defined_class[Javassist]`, `ConfigurationFactoryImplTest...from_environment_variable_if_defined` (reads an environment variable).
-- JDK 21 with opens: 11 EasyMock tests (see Known limitations).
+None in the local matrix or in CI on JDK 8, 11, 17 and 21. `StringConstructorWorksWhenExtendingTestCase` (EasyMock, JUnit 3 style) is not executed by the Gradle test task and still asserts the EasyMock 4 message text.
 
 ### Lab branches
 
