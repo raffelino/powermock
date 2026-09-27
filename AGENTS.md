@@ -25,6 +25,7 @@ PowerMock 2.0.10 (`version.properties`) extends EasyMock/Mockito via bytecode ma
 - `tests/java11` has JDK-11 gating commented out (TODO); it runs on every JDK.
 
 ## Be careful with
+- Mockito/Byte Buddy versions depend on the JDK Gradle runs on (`build.gradle ext`): Java 11+ = Mockito 5.24.0 + Byte Buddy 1.17.7, JDK 8 = Mockito 4.3.1 + Byte Buddy 1.14.11. PowerMock main code must compile against both (e.g. `PowerMockMaker.createMock` uses the raw erased signature).
 - Don't bump versions in `build.gradle ext` casually (mockito excludes byte-buddy to pin `byteBuddy`). Don't touch the wrapper SHA-256 pin or `gradlew*` by hand.
 - `-PcheckJava6Compatibility` applies animalsniffer (signature `java18`) to publishable modules; changing `sourceCompatibility` breaks the 1.8 contract of the published jars.
 
