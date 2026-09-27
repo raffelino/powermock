@@ -39,6 +39,22 @@ ext{
 // shipkit (Bintray-based release tooling, dead since Bintray shutdown) used to apply 'java' to all projects
 allprojects { apply plugin: 'java-library' }
 
+// Test JVMs on Java 9+ need these packages opened for the unnamed module (JDK 16+ denies illegal reflective
+// access by default; JDK 9-15 only warn). They are the same four opens the revival labs verified:
+//   java.base/java.lang          ClassLoader.defineClass for javassist/cglib proxies, System/Class internals
+//   java.base/java.util          system-rules EnvironmentVariables and mocked java.util classes
+//   java.base/java.lang.reflect  Whitebox/MockGateway access to Field/Method/Proxy internals
+//   java.desktop/java.awt.font   system-class mocking samples that touch AWT font classes
+// Java 8 has no module system and is left unchanged. Users of PowerMock on Java 17+ need the same opens.
+if (JavaVersion.current().isJava9Compatible()) {
+    allprojects {
+        tasks.withType(Test).configureEach {
+            jvmArgs(['java.base/java.lang', 'java.base/java.util', 'java.base/java.lang.reflect', 'java.desktop/java.awt.font']
+                    .collect { "--add-opens=${it}=ALL-UNNAMED" })
+        }
+    }
+}
+
 description = 'PowerMock allows you to unit test code normally regarded as untestable.\n' +
         '        For instance it is possible to mock static methods, remove static initializers, allow mocking without dependency\n' +
         '        injection and more.\n' +
