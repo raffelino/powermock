@@ -39,17 +39,17 @@ ext{
 // shipkit (Bintray-based release tooling, dead since Bintray shutdown) used to apply 'java' to all projects
 allprojects { apply plugin: 'java-library' }
 
-// Test JVMs on Java 9+ need these packages opened for the unnamed module (JDK 16+ denies illegal reflective
-// access by default; JDK 9-15 only warn). They are the same four opens the revival labs verified:
-//   java.base/java.lang          ClassLoader.defineClass for javassist/cglib proxies, System/Class internals
-//   java.base/java.util          system-rules EnvironmentVariables and mocked java.util classes
-//   java.base/java.lang.reflect  Whitebox/MockGateway access to Field/Method/Proxy internals
-//   java.desktop/java.awt.font   system-class mocking samples that touch AWT font classes
-// Java 8 has no module system and is left unchanged. Users of PowerMock on Java 17+ need the same opens.
+// Test JVMs on Java 9+ need two packages opened for the unnamed module (JDK 16+ denies illegal reflective
+// access by default; JDK 9-15 only warn). Measured on JDK 21 by dropping one open at a time (.lab/11_harden D_*):
+//   java.base/java.lang  ClassLoader.defineClass for javassist/cglib classes (MockClassLoaderTest, ProxyFrameworksTest,
+//                        EasyMock replicas of final system classes, PowerMock.isEasyMocked via cglib Enhancer)
+//   java.base/java.util  system-rules EnvironmentVariables (ConfigurationFactoryImplTest)
+// java.lang.reflect and java.desktop/java.awt.font, which the labs also opened, are not needed with EasyMock 5.
+// Java 8 has no module system and is left unchanged. Users of PowerMock on Java 17+ need the java.lang open too.
 if (JavaVersion.current().isJava9Compatible()) {
     allprojects {
         tasks.withType(Test).configureEach {
-            jvmArgs(['java.base/java.lang', 'java.base/java.util', 'java.base/java.lang.reflect', 'java.desktop/java.awt.font']
+            jvmArgs(['java.base/java.lang', 'java.base/java.util']
                     .collect { "--add-opens=${it}=ALL-UNNAMED" })
         }
     }
