@@ -1,6 +1,7 @@
 package org.powermock.modules.junit5;
 
 import org.junit.jupiter.api.extension.AfterEachCallback;
+import org.junit.jupiter.api.extension.DynamicTestInvocationContext;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.extension.InvocationInterceptor;
 import org.junit.jupiter.api.extension.ReflectiveInvocationContext;
@@ -37,6 +38,35 @@ public class PowerMockExtension implements InvocationInterceptor, AfterEachCallb
     public void interceptTestMethod(Invocation<Void> invocation, ReflectiveInvocationContext<Method> invocationContext,
                                     ExtensionContext extensionContext) throws Throwable {
         MockedInvoker.invoke(invocation, invocationContext, extensionContext);
+    }
+
+    @Override
+    public void interceptTestTemplateMethod(Invocation<Void> invocation, ReflectiveInvocationContext<Method> invocationContext,
+                                            ExtensionContext extensionContext) throws Throwable {
+        // @RepeatedTest, @ParameterizedTest
+        MockedInvoker.invoke(invocation, invocationContext, extensionContext);
+    }
+
+    @Override
+    public <T> T interceptTestFactoryMethod(Invocation<T> invocation, ReflectiveInvocationContext<Method> invocationContext,
+                                            ExtensionContext extensionContext) throws Throwable {
+        // the returned dynamic tests' executables are then classes of the MockClassLoader as well
+        return MockedInvoker.invoke(invocation, invocationContext, extensionContext);
+    }
+
+    @Override
+    public void interceptDynamicTest(Invocation<Void> invocation, DynamicTestInvocationContext invocationContext,
+                                     ExtensionContext extensionContext) throws Throwable {
+        // the executable was created by the redirected @TestFactory, so it already lives in the MockClassLoader;
+        // Mockito/PowerMock just need that loader as context class loader
+        final Thread thread = Thread.currentThread();
+        final ClassLoader previous = thread.getContextClassLoader();
+        thread.setContextClassLoader(invocationContext.getExecutable().getClass().getClassLoader());
+        try {
+            invocation.proceed();
+        } finally {
+            thread.setContextClassLoader(previous);
+        }
     }
 
     @Override
