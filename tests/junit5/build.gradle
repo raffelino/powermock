@@ -1,0 +1,5 @@
+// Lab 08 infrastructure (coordinator): JUnit Platform for the Jupiter acceptance tests.
+// Dependencies and test sources are added by the acceptance-test author.
+test {
+    useJUnitPlatform()
+}
