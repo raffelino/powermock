@@ -53,6 +53,39 @@ public class WhiteboxImplModuleAccessTest {
 
     private static final boolean JAVA_9_PLUS = hasTrySetAccessible();
 
+    /**
+     * Whether the runtime actually encapsulates JDK internals: {@code setAccessible(true)} on a private field of
+     * {@code java.util.concurrent.ConcurrentHashMap} throws {@code InaccessibleObjectException}. False on Java 8,
+     * on JDK 9-15, where illegal reflective access is permitted by default, and whenever {@code java.util.concurrent} is opened.
+     */
+    private static final boolean JDK_INTERNALS_CLOSED = jdkInternalsClosed();
+
+    private static boolean jdkInternalsClosed() {
+        try {
+            ConcurrentHashMap.class.getDeclaredField("sizeCtl").setAccessible(true);
+            return false;
+        } catch (NoSuchFieldException e) {
+            throw new IllegalStateException(e);
+        } catch (RuntimeException e) {
+            // InaccessibleObjectException does not exist on Java 8, so match it by name
+            if ("java.lang.reflect.InaccessibleObjectException".equals(e.getClass().getName())) {
+                return true;
+            }
+            throw e;
+        }
+    }
+
+    /** The R1 expectations only hold where the runtime keeps java.util.concurrent closed (a runtime property, not a version). */
+    private static void assumeJdkInternalsClosed() {
+        assumeTrue("JDK internals are open in this runtime", JDK_INTERNALS_CLOSED);
+    }
+
+    /** Feature version of the running JDK ("1.8" -> 8, "17" -> 17); Java 8 has no Runtime.version(). */
+    private static int javaFeatureVersion() {
+        String version = System.getProperty("java.specification.version");
+        return Integer.parseInt(version.startsWith("1.") ? version.substring(2) : version);
+    }
+
     private static boolean hasTrySetAccessible() {
         try {
             AccessibleObject.class.getMethod("trySetAccessible");
@@ -66,7 +99,7 @@ public class WhiteboxImplModuleAccessTest {
 
     @Test
     public void r1_getAllMethods_on_unopened_jdk_class_does_not_throw_and_leaves_private_methods_inaccessible() {
-        assumeTrue("module system exists only on Java 9+", JAVA_9_PLUS);
+        assumeJdkInternalsClosed();
         Method[] methods = WhiteboxImpl.getAllMethods(ConcurrentHashMap.class);
 
         Method tryPresize = findByName(methods, "tryPresize");
@@ -76,7 +109,7 @@ public class WhiteboxImplModuleAccessTest {
 
     @Test
     public void r1_getMethods_by_name_on_unopened_jdk_class_returns_inaccessible_private_method() {
-        assumeTrue(JAVA_9_PLUS);
+        assumeJdkInternalsClosed();
         Method[] methods = WhiteboxImpl.getMethods(ConcurrentHashMap.class, "tryPresize");
 
         assertEquals(1, methods.length);
@@ -85,7 +118,7 @@ public class WhiteboxImplModuleAccessTest {
 
     @Test
     public void r1_getMethod_by_parameter_types_on_unopened_jdk_class_returns_inaccessible_private_method() {
-        assumeTrue(JAVA_9_PLUS);
+        assumeJdkInternalsClosed();
         // private final void fullAddCount(long, boolean) is the only declared (long, boolean) method
         Method fullAddCount = WhiteboxImpl.getMethod(ConcurrentHashMap.class, long.class, boolean.class);
 
@@ -95,7 +128,7 @@ public class WhiteboxImplModuleAccessTest {
 
     @Test
     public void r1_getField_on_unopened_jdk_class_returns_inaccessible_private_field() {
-        assumeTrue(JAVA_9_PLUS);
+        assumeJdkInternalsClosed();
         Field sizeCtl = WhiteboxImpl.getField(ConcurrentHashMap.class, "sizeCtl");
 
         assertEquals("sizeCtl", sizeCtl.getName());
@@ -439,6 +472,10 @@ public class WhiteboxImplModuleAccessTest {
      * only, and returns what the action threw.
      */
     private static Throwable withAccessCheckFailure(final Throwable failure, Callable action) throws Exception {
+        // JEP 411: the SecurityManager is deprecated for removal and cannot be installed at runtime on JDK 18+
+        // (System.setSecurityManager throws UnsupportedOperationException). A stub AccessibleObject cannot replace it:
+        // trySetAccessible() is final and only fails through the SecurityManager's suppressAccessChecks check.
+        assumeTrue("System.setSecurityManager is unsupported on JDK 18+ (JEP 411)", javaFeatureVersion() <= 17);
         final Thread testThread = Thread.currentThread();
         SecurityManager previous = System.getSecurityManager();
         final boolean[] armed = {true};
