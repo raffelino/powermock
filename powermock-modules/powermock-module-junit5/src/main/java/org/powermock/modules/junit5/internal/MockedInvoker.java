@@ -49,14 +49,10 @@ public final class MockedInvoker {
             types[i] = originalTypes[i].isPrimitive() ? originalTypes[i]
                     : Class.forName(originalTypes[i].getName(), false, mockLoader);
         }
-        // the method may be declared in a superclass of the test class
-        for (Class<?> c = mockedClass; c != null; c = c.getSuperclass()) {
-            if (c.getName().equals(original.getDeclaringClass().getName())) {
-                final Method method = c.getDeclaredMethod(original.getName(), types);
-                method.setAccessible(true);
-                return method;
-            }
-        }
-        throw new NoSuchMethodException(original + " in " + mockedClass);
+        // the method may be declared in a superclass or (default method) in an interface of the test class
+        final Class<?> declaring = Class.forName(original.getDeclaringClass().getName(), false, mockLoader);
+        final Method method = declaring.getDeclaredMethod(original.getName(), types);
+        method.setAccessible(true);
+        return method;
     }
 }
