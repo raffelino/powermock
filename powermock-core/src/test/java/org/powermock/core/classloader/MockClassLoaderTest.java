@@ -319,10 +319,23 @@ public class MockClassLoaderTest {
                 ClassPool cp = ClassPool.getDefault();
                 final CtClass ctClass = cp.makeClass("my.ABCTestClass");
                 classBytes = ctClass.toBytecode();
-                clazz = ctClass.toClass();
+                // Define through a ClassLoader subclass: CtClass.toClass() without a neighbour
+                // class needs reflective access to ClassLoader.defineClass, denied on JDK 17+.
+                clazz = new DefiningClassLoader(MockClassLoaderTest.class.getClassLoader())
+                            .define(ctClass.getName(), classBytes);
             } catch (Exception e) {
                 throw new RuntimeException("Problem constructing custom class", e);
             }
+        }
+    }
+    
+    private static class DefiningClassLoader extends ClassLoader {
+        DefiningClassLoader(ClassLoader parent) {
+            super(parent);
+        }
+        
+        Class<?> define(String name, byte[] bytes) {
+            return defineClass(name, bytes, 0, bytes.length);
         }
     }
     
