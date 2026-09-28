@@ -1,0 +1,15 @@
+C1	powermock.modules.junit5.gaps.c1annotations.C1MockAnnotationTest	5
+C1	powermock.modules.junit5.gaps.c1annotations.C1SpyAndCaptorTest	3
+C1	powermock.modules.junit5.gaps.c1annotations.C1InjectMocksTest	3
+C1	powermock.modules.junit5.gaps.c1annotations.C1AnnotatedMocksInLifecycleTest	3
+C2	powermock.modules.junit5.gaps.c2nested.C2NestedInheritsPrepareForTest	3
+C2	powermock.modules.junit5.gaps.c2nested.C2NestedLifecycleTest	3
+C2	powermock.modules.junit5.gaps.c2nested.C2DoubleNestingTest	3
+C2	powermock.modules.junit5.gaps.c2nested.C2NestedOwnPrepareForTest	3
+C3	powermock.modules.junit5.gaps.c3injection.C3ConstructorInjectionTest	3
+C3	powermock.modules.junit5.gaps.c3injection.C3MethodParameterInjectionTest	4
+C3	powermock.modules.junit5.gaps.c3injection.C3TempDirTest	4
+C4	powermock.modules.junit5.gaps.c4extensions.C4PowerMockThenMockitoExtensionTest	3
+C4	powermock.modules.junit5.gaps.c4extensions.C4MockitoThenPowerMockExtensionTest	3
+C4	powermock.modules.junit5.gaps.c4extensions.C4PowerMockThenCustomExtensionTest	4
+C4	powermock.modules.junit5.gaps.c4extensions.C4CustomThenPowerMockExtensionTest	4
