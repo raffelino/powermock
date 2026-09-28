@@ -90,7 +90,7 @@ public class InvocationControlAssertionError {
     /**
      * Replaces the message of {@code error}. {@code Throwable.detailMessage} can only be written via deep reflection,
      * which Java 16+ denies unless {@code java.lang} is opened. In that case a new error of the same type is created
-     * (the Mockito assertion errors all have a {@code (String)} constructor) that carries the original stack trace
+     * (the Mockito assertion errors all have a {@code (String)} constructor, {@code AssertionError} an {@code (Object)} one) that carries the original stack trace
      * and cause. If even that is impossible the original error is returned unchanged.
      */
     @SuppressWarnings("unchecked")
@@ -102,8 +102,7 @@ public class InvocationControlAssertionError {
             // Most likely java.lang.reflect.InaccessibleObjectException (Java 9+ module system), fall through.
         }
         try {
-            final Constructor<? extends AssertionError> constructor = error.getClass().getConstructor(String.class);
-            final T copy = (T) constructor.newInstance(message);
+            final T copy = (T) messageConstructor(error.getClass()).newInstance(message);
             copy.setStackTrace(error.getStackTrace());
             if (error.getCause() != null && copy.getCause() == null) {
                 copy.initCause(error.getCause());
@@ -114,6 +113,15 @@ public class InvocationControlAssertionError {
             return copy;
         } catch (Exception e) {
             return error;
+        }
+    }
+
+    private static Constructor<?> messageConstructor(Class<?> type) throws NoSuchMethodException {
+        try {
+            return type.getConstructor(String.class);
+        } catch (NoSuchMethodException e) {
+            // java.lang.AssertionError itself only has AssertionError(Object) for a message
+            return type.getConstructor(Object.class);
         }
     }
 
