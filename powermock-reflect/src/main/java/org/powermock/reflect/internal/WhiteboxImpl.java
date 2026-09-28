@@ -158,7 +158,8 @@ public class WhiteboxImpl {
                 if (checkIfParameterTypesAreSame(method.isVarArgs(), parameterTypes, method.getParameterTypes())) {
                     foundMethods.add(method);
                     if (foundMethods.size() == 1) {
-                        method.setAccessible(true);
+                        // e.g. Object.finalize() on Java 16+: stays inaccessible instead of aborting the lookup
+                        trySetAccessible(method);
                     }
                 }
 
