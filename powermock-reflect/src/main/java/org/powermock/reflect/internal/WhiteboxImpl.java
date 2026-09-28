@@ -158,7 +158,7 @@ public class WhiteboxImpl {
                 if (checkIfParameterTypesAreSame(method.isVarArgs(), parameterTypes, method.getParameterTypes())) {
                     foundMethods.add(method);
                     if (foundMethods.size() == 1) {
-                        method.setAccessible(true);
+                        trySetAccessible(method);
                     }
                 }
 
@@ -469,7 +469,7 @@ public class WhiteboxImpl {
     public static <T> T getInternalState(Object object, String fieldName) {
         Field foundField = findFieldInHierarchy(object, fieldName);
         try {
-            return (T) foundField.get(object);
+            return (T) getFieldValue(foundField, object);
         } catch (IllegalAccessException e) {
             throw new RuntimeException("Internal error: Failed to get field in method getInternalState.", e);
         }
@@ -544,7 +544,7 @@ public class WhiteboxImpl {
         if (foundField == null) {
             strategy.notFound(originalStartClass, !isClass(object));
         }
-        foundField.setAccessible(true);
+        trySetAccessible(foundField);
         return foundField;
     }
 
@@ -618,7 +618,7 @@ public class WhiteboxImpl {
     public static <T> T getInternalState(Object object, Class<T> fieldType) {
         Field foundField = findFieldInHierarchy(object, new AssignableToFieldTypeMatcherStrategy(fieldType));
         try {
-            return (T) foundField.get(object);
+            return (T) getFieldValue(foundField, object);
         } catch (IllegalAccessException e) {
             throw new RuntimeException("Internal error: Failed to get field in method getInternalState.", e);
         }
@@ -643,7 +643,7 @@ public class WhiteboxImpl {
         }
 
         try {
-            return (T) findFieldOrThrowException(fieldType, where).get(object);
+            return (T) getFieldValue(findFieldOrThrowException(fieldType, where), object);
         } catch (IllegalAccessException e) {
             throw new RuntimeException("Internal error: Failed to get field in method getInternalState.", e);
         }
@@ -670,8 +670,8 @@ public class WhiteboxImpl {
         Field field = null;
         try {
             field = where.getDeclaredField(fieldName);
-            field.setAccessible(true);
-            return (T) field.get(object);
+            trySetAccessible(field);
+            return (T) getFieldValue(field, object);
         } catch (NoSuchFieldException e) {
             throw new FieldNotFoundException("Field '" + fieldName + "' was not found in class " + where.getName()
                                                      + ".");
@@ -2305,7 +2305,7 @@ public class WhiteboxImpl {
         Field field = null;
         try {
             field = where.getDeclaredField(fieldName);
-            field.setAccessible(true);
+            trySetAccessible(field);
         } catch (NoSuchFieldException e) {
             throw new FieldNotFoundException("Field '" + fieldName + "' was not found in class " + where.getName()
                                                      + ".");
@@ -2326,7 +2326,7 @@ public class WhiteboxImpl {
         }
         Field field = null;
         for (Field currentField : where.getDeclaredFields()) {
-            currentField.setAccessible(true);
+            trySetAccessible(currentField);
             if (currentField.getType().equals(fieldType)) {
                 field = currentField;
                 break;
@@ -2356,10 +2356,12 @@ public class WhiteboxImpl {
 
     private static void setStaticFieldUsingUnsafe(final Field field, final Object newValue) {
         try {
-            field.setAccessible(true);
+            boolean accessible = trySetAccessible(field);
             int fieldModifiersMask = field.getModifiers();
             boolean isFinalModifierPresent = (fieldModifiersMask & Modifier.FINAL) == Modifier.FINAL;
-            if (isFinalModifierPresent) {
+            // A field of a JDK class in a package that is not opened to PowerMock (Java 9+) cannot be made
+            // accessible; it is written through Unsafe like a final field.
+            if (isFinalModifierPresent || !accessible) {
                 AccessController.doPrivileged(new PrivilegedAction<Object>() {
                     @Override
                     public Object run() {
@@ -2387,10 +2389,12 @@ public class WhiteboxImpl {
 
     private static void setFieldUsingUnsafe(final Field field, final Object object, final Object newValue) {
         try {
-            field.setAccessible(true);
+            boolean accessible = trySetAccessible(field);
             int fieldModifiersMask = field.getModifiers();
             boolean isFinalModifierPresent = (fieldModifiersMask & Modifier.FINAL) == Modifier.FINAL;
-            if (isFinalModifierPresent) {
+            // A field of a JDK class in a package that is not opened to PowerMock (Java 9+) cannot be made
+            // accessible; it is written through Unsafe like a final field.
+            if (isFinalModifierPresent || !accessible) {
                 AccessController.doPrivileged(new PrivilegedAction<Object>() {
                     @Override
                     public Object run() {
@@ -2416,6 +2420,68 @@ public class WhiteboxImpl {
         }
     }
     
+    /**
+     * Reads the value of {@code field} from {@code object} ({@code null} for a static field). A field that
+     * could not be made accessible (a field of a JDK class in a package that is not opened to PowerMock on
+     * Java 9+) is read through Unsafe; every other field is read with {@link Field#get(Object)}.
+     */
+    @SuppressWarnings("deprecation")
+    private static Object getFieldValue(final Field field, final Object object) throws IllegalAccessException {
+        if (field.isAccessible()) {
+            return field.get(object);
+        }
+        return AccessController.doPrivileged(new PrivilegedAction<Object>() {
+            @Override
+            public Object run() {
+                try {
+                    Unsafe unsafe = getUnsafe();
+                    final Object base;
+                    final long offset;
+                    if (Modifier.isStatic(field.getModifiers())) {
+                        base = unsafe.staticFieldBase(field);
+                        offset = unsafe.staticFieldOffset(field);
+                    } else {
+                        if (object == null) {
+                            throw new NullPointerException("Cannot read instance field " + field + " of null");
+                        }
+                        if (!field.getDeclaringClass().isInstance(object)) {
+                            throw new IllegalArgumentException("Can not get field " + field + " on " + object.getClass().getName());
+                        }
+                        base = object;
+                        offset = unsafe.objectFieldOffset(field);
+                    }
+                    return getFieldUsingUnsafe(base, field.getType(), offset, unsafe);
+                } catch (RuntimeException e) {
+                    throw e;
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        });
+    }
+
+    private static Object getFieldUsingUnsafe(Object base, Class<?> type, long offset, Unsafe unsafe) {
+        if (type == Integer.TYPE) {
+            return unsafe.getInt(base, offset);
+        } else if (type == Short.TYPE) {
+            return unsafe.getShort(base, offset);
+        } else if (type == Long.TYPE) {
+            return unsafe.getLong(base, offset);
+        } else if (type == Byte.TYPE) {
+            return unsafe.getByte(base, offset);
+        } else if (type == Boolean.TYPE) {
+            return unsafe.getBoolean(base, offset);
+        } else if (type == Float.TYPE) {
+            return unsafe.getFloat(base, offset);
+        } else if (type == Double.TYPE) {
+            return unsafe.getDouble(base, offset);
+        } else if (type == Character.TYPE) {
+            return unsafe.getChar(base, offset);
+        } else {
+            return unsafe.getObject(base, offset);
+        }
+    }
+
     private static Unsafe getUnsafe() throws IllegalArgumentException, IllegalAccessException, NoSuchFieldException, SecurityException {
         Field field1 = Unsafe.class.getDeclaredField("theUnsafe");
         field1.setAccessible(true);
