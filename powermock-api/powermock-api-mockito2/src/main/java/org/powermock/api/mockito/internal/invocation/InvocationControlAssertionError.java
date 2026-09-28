@@ -15,9 +15,11 @@
  */
 package org.powermock.api.mockito.internal.invocation;
 
+import org.mockito.exceptions.base.MockitoAssertionError;
 import org.powermock.core.spi.support.InvocationSubstitute;
 import org.powermock.reflect.Whitebox;
 
+import java.lang.reflect.Constructor;
 import java.util.regex.Matcher;
 
 public class InvocationControlAssertionError {
@@ -29,7 +31,13 @@ public class InvocationControlAssertionError {
     private static final String UNDESIRED_INVOCATION_TEXT = " Undesired invocation:";
     private static final String POWER_MOCKITO_CLASS_NAME = "org.powermock.api.mockito.PowerMockito";
 
-    public static void updateErrorMessageForVerifyNoMoreInteractions(AssertionError errorToUpdate) {
+    /**
+     * Updates the message of a failed {@code verifyNoMoreInteractions} so that it points to the user's invocation.
+     *
+     * @return the error to throw: {@code errorToUpdate} itself if its message could be updated in place, otherwise a
+     * new error of the same type (if possible) carrying the updated message and the original stack trace.
+     */
+    public static AssertionError updateErrorMessageForVerifyNoMoreInteractions(AssertionError errorToUpdate) {
         /*
          * VerifyNoMoreInteractions failed, we need to update the error message.
          */
@@ -52,7 +60,7 @@ public class InvocationControlAssertionError {
 
         if (verifyNoMoreInteractionsInvocation == null) {
             // Something unexpected happened, just return
-            return;
+            return errorToUpdate;
         }
         String message = errorToUpdate.getMessage();
         StringBuilder builder = new StringBuilder();
@@ -63,17 +71,58 @@ public class InvocationControlAssertionError {
         builder.replace(startOfVerifyNoMoreInteractionsInvocation, endOfVerifyNoMoreInteractionsInvocation,
                         verifyNoMoreInteractionsInvocation);
         builder.delete(builder.indexOf("\n", endOfVerifyNoMoreInteractionsInvocation + 1), builder.lastIndexOf("\n"));
-        Whitebox.setInternalState(errorToUpdate, "detailMessage", builder.toString());
+        return withMessage(errorToUpdate, builder.toString());
     }
 
-    public static void updateErrorMessageForMethodInvocation(AssertionError errorToUpdate) {
+    /**
+     * @return the error to throw, see {@link #updateErrorMessageForVerifyNoMoreInteractions(AssertionError)}.
+     */
+    public static AssertionError updateErrorMessageForMethodInvocation(AssertionError errorToUpdate) {
         /*
          * We failed to verify the new substitution mock. This happens when, for
          * example, the user has done something like
          * whenNew(MyClass.class).thenReturn(myMock).times(3) when in fact an
          * instance of MyClass has been created less or more times than 3.
          */
-        Whitebox.setInternalState(errorToUpdate, "detailMessage", "\n" + changeMessageContent(errorToUpdate.getMessage()));
+        return withMessage(errorToUpdate, "\n" + changeMessageContent(errorToUpdate.getMessage()));
+    }
+
+    private static AssertionError withMessage(AssertionError error, String message) {
+        try {
+            Whitebox.setInternalState(error, "detailMessage", message);
+            if (message.equals(error.getMessage())) {
+                return error;
+            }
+        } catch (RuntimeException e) {
+            // Throwable.detailMessage is not accessible, e.g. on JDK 16+ where java.lang is not opened
+            // to PowerMock. Fall back to a copy of the error carrying the new message.
+        }
+        final AssertionError copy = newErrorOfSameType(error, message);
+        copy.setStackTrace(error.getStackTrace());
+        if (error.getCause() != null && copy.getCause() == null) {
+            try {
+                copy.initCause(error.getCause());
+            } catch (IllegalStateException ignored) {
+                // cause cannot be set, keep the copy without it
+            }
+        }
+        for (Throwable suppressed : error.getSuppressed()) {
+            copy.addSuppressed(suppressed);
+        }
+        return copy;
+    }
+
+    private static AssertionError newErrorOfSameType(AssertionError error, String message) {
+        try {
+            final Constructor<? extends AssertionError> constructor = error.getClass().getConstructor(String.class);
+            return constructor.newInstance(message);
+        } catch (Exception e) {
+            // no accessible (String) constructor, fall back to the closest type we can create
+            if (error instanceof MockitoAssertionError) {
+                return new MockitoAssertionError(message);
+            }
+            return new AssertionError(message);
+        }
     }
 
     public static void throwAssertionErrorForNewSubstitutionFailure(AssertionError oldError, Class<?> type) {
