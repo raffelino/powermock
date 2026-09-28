@@ -18,6 +18,7 @@ package org.powermock.api.mockito.internal.invocation;
 import org.powermock.core.spi.support.InvocationSubstitute;
 import org.powermock.reflect.Whitebox;
 
+import java.lang.reflect.Constructor;
 import java.util.regex.Matcher;
 
 public class InvocationControlAssertionError {
@@ -29,7 +30,14 @@ public class InvocationControlAssertionError {
     private static final String UNDESIRED_INVOCATION_TEXT = " Undesired invocation:";
     private static final String POWER_MOCKITO_CLASS_NAME = "org.powermock.api.mockito.PowerMockito";
 
-    public static void updateErrorMessageForVerifyNoMoreInteractions(AssertionError errorToUpdate) {
+    /**
+     * Rewrites the message of a failed verifyNoMoreInteractions so that it points to the test code.
+     *
+     * @param errorToUpdate the error thrown by Mockito
+     * @return an error of the same type with the rewritten message (or {@code errorToUpdate} itself if the
+     * message could not be rewritten); callers must throw the returned error
+     */
+    public static AssertionError updateErrorMessageForVerifyNoMoreInteractions(AssertionError errorToUpdate) {
         /*
          * VerifyNoMoreInteractions failed, we need to update the error message.
          */
@@ -52,7 +60,7 @@ public class InvocationControlAssertionError {
 
         if (verifyNoMoreInteractionsInvocation == null) {
             // Something unexpected happened, just return
-            return;
+            return errorToUpdate;
         }
         String message = errorToUpdate.getMessage();
         StringBuilder builder = new StringBuilder();
@@ -63,17 +71,51 @@ public class InvocationControlAssertionError {
         builder.replace(startOfVerifyNoMoreInteractionsInvocation, endOfVerifyNoMoreInteractionsInvocation,
                         verifyNoMoreInteractionsInvocation);
         builder.delete(builder.indexOf("\n", endOfVerifyNoMoreInteractionsInvocation + 1), builder.lastIndexOf("\n"));
-        Whitebox.setInternalState(errorToUpdate, "detailMessage", builder.toString());
+        return withMessage(errorToUpdate, builder.toString());
     }
 
-    public static void updateErrorMessageForMethodInvocation(AssertionError errorToUpdate) {
+    /**
+     * Removes PowerMock internal locations from the message of a failed verification.
+     *
+     * @param errorToUpdate the error thrown by Mockito
+     * @return an error of the same type with the rewritten message; callers must throw the returned error
+     */
+    public static AssertionError updateErrorMessageForMethodInvocation(AssertionError errorToUpdate) {
         /*
          * We failed to verify the new substitution mock. This happens when, for
          * example, the user has done something like
          * whenNew(MyClass.class).thenReturn(myMock).times(3) when in fact an
          * instance of MyClass has been created less or more times than 3.
          */
-        Whitebox.setInternalState(errorToUpdate, "detailMessage", "\n" + changeMessageContent(errorToUpdate.getMessage()));
+        return withMessage(errorToUpdate, "\n" + changeMessageContent(errorToUpdate.getMessage()));
+    }
+
+    /*
+     * Creates a copy of the error with a new message. Writing Throwable.detailMessage via reflection is not possible
+     * on JDK 16+ unless java.base opens java.lang, so a new instance of the same type is created instead (all Mockito
+     * verification errors have a public (String) constructor). Only if that fails the old field-writing approach is used.
+     */
+    private static AssertionError withMessage(AssertionError original, String message) {
+        final AssertionError copy;
+        try {
+            Constructor<? extends AssertionError> constructor = original.getClass().getConstructor(String.class);
+            copy = constructor.newInstance(message);
+        } catch (Exception e) {
+            Whitebox.setInternalState(original, "detailMessage", message);
+            return original;
+        }
+        copy.setStackTrace(original.getStackTrace());
+        if (original.getCause() != null && copy.getCause() == null) {
+            try {
+                copy.initCause(original.getCause());
+            } catch (IllegalStateException ignored) {
+                // cause already initialized by the constructor
+            }
+        }
+        for (Throwable suppressed : original.getSuppressed()) {
+            copy.addSuppressed(suppressed);
+        }
+        return copy;
     }
 
     public static void throwAssertionErrorForNewSubstitutionFailure(AssertionError oldError, Class<?> type) {
