@@ -18,7 +18,12 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.verify;
 
-/** C1: @Spy (initialised and uninitialised field) and @Captor under PowerMockExtension. */
+/**
+ * C1: @Spy and @Captor under PowerMockExtension. Both @Spy fields carry an initialiser, as
+ * PowerMockRunner's PowerMockitoSpyAnnotationEngine requires; spies are checked with isMock(),
+ * because PowerMockito spies use POWER_MOCK_CALL_REAL_METHOD, which Mockito's isSpy() does not
+ * recognise. Real behaviour is proven by the real return values.
+ */
 @ExtendWith(PowerMockExtension.class)
 @PrepareForTest(Calculator.class)
 class C1SpyAndCaptorTest {
@@ -27,7 +32,7 @@ class C1SpyAndCaptorTest {
     private Calculator calculator = new Calculator();
 
     @Spy
-    private Calculator defaultConstructedSpy;
+    private Calculator defaultConstructedSpy = new Calculator();
 
     @Mock
     private UserRepository repository;
@@ -37,7 +42,7 @@ class C1SpyAndCaptorTest {
 
     @Test
     void spyCallsRealMethodsAndCanBePartiallyStubbed() {
-        assertTrue(mockingDetails(calculator).isSpy(), "@Spy field must be turned into a spy");
+        assertTrue(mockingDetails(calculator).isMock(), "@Spy field must be replaced by a PowerMock spy");
         assertEquals(4, calculator.twice(2));
         doReturn(100).when(calculator).add(3, 3);
         assertEquals(100, calculator.twice(3));
@@ -46,8 +51,8 @@ class C1SpyAndCaptorTest {
 
     @Test
     void spyOfPreparedClassCanStubFinalMethod() {
-        assertNotNull(defaultConstructedSpy, "@Spy without initialiser must be created with the no-arg constructor");
-        assertTrue(mockingDetails(defaultConstructedSpy).isSpy());
+        assertNotNull(defaultConstructedSpy, "@Spy field with initialiser must not be null");
+        assertTrue(mockingDetails(defaultConstructedSpy).isMock(), "@Spy field must be replaced by a PowerMock spy");
         assertEquals(41, defaultConstructedSpy.answer());
         doReturn(42).when(defaultConstructedSpy).answer();
         assertEquals(42, defaultConstructedSpy.answer());
