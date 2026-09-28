@@ -69,6 +69,34 @@ public class WhiteboxImplTest {
 	}
 
 	@Test
+	public void setInternalStateChangesPrivateFieldOfJdkClassInPackageNotOpenedToPowerMock() throws Exception {
+		// java.lang is not opened to the unnamed module on Java 17 by default
+		final AssertionError error = new AssertionError("original");
+		WhiteboxImpl.setInternalState(error, "detailMessage", "changed");
+		assertThat(error.getMessage()).isEqualTo("changed");
+	}
+
+	@Test
+	public void setInternalStateWithWhereChangesPrivateFieldOfJdkClassInPackageNotOpenedToPowerMock() throws Exception {
+		final AssertionError error = new AssertionError("original");
+		WhiteboxImpl.setInternalState(error, "detailMessage", "changed", Throwable.class);
+		assertThat(error.getMessage()).isEqualTo("changed");
+	}
+
+	@Test
+	public void getInternalStateReadsPrivateFieldOfJdkClassInPackageNotOpenedToPowerMock() throws Exception {
+		final AssertionError error = new AssertionError("original");
+		assertThat(WhiteboxImpl.<String>getInternalState(error, "detailMessage")).isEqualTo("original");
+		assertThat(WhiteboxImpl.<String>getInternalState(error, "detailMessage", Throwable.class)).isEqualTo("original");
+	}
+
+	@Test
+	public void getMethodByNameFindsProtectedMethodOfJdkClassInPackageNotOpenedToPowerMock() throws Exception {
+		final Method method = WhiteboxImpl.getMethod(Object.class, "finalize");
+		assertThat(method.getName()).isEqualTo("finalize");
+	}
+
+	@Test
 	public void getBestCandidateMethodReturnsMatchingMethodWhenNoOverloading() throws Exception {
 		final Method expectedMethod = ClassWithStandardMethod.class.getDeclaredMethod("myMethod", double.class);
 		final Method actualMethod = WhiteboxImpl.getBestMethodCandidate(ClassWithStandardMethod.class, "myMethod",
