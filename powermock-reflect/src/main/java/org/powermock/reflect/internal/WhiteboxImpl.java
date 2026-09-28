@@ -157,14 +157,16 @@ public class WhiteboxImpl {
             for (Method method : methodsToTraverse) {
                 if (checkIfParameterTypesAreSame(method.isVarArgs(), parameterTypes, method.getParameterTypes())) {
                     foundMethods.add(method);
-                    if (foundMethods.size() == 1) {
-                        method.setAccessible(true);
-                    }
                 }
 
             }
             if (foundMethods.size() == 1) {
-                return foundMethods.get(0);
+                // Only the method that is actually returned is made accessible. Making a candidate accessible
+                // eagerly fails on Java 16+ when it is a non-public JDK method (e.g. Object.finalize) even though
+                // the lookup ends with a TooManyMethodsFoundException anyway.
+                final Method method = foundMethods.get(0);
+                method.setAccessible(true);
+                return method;
             } else if (foundMethods.size() > 1) {
                 break;
             }

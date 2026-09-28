@@ -27,9 +27,11 @@ import org.powermock.tests.utils.IgnorePackagesExtractor;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLConnection;
 import java.security.ProtectionDomain;
+import java.util.Set;
 
 /**
  * <p>
@@ -100,10 +102,61 @@ public abstract class MockClassLoader extends DeferSupportingClassLoader {
         Class<?> deferClass = deferTo.loadClass(className);
         if (getConfiguration().shouldMockClass(className)) {
             loadedClass = loadMockClass(className, deferClass.getProtectionDomain());
+        } else if (canUseOriginalClassOfNamedModule(deferClass)) {
+            // A class of a named module (e.g. javax.crypto.Cipher in java.base) that is not modified gains nothing from
+            // being redefined here, but loses its module membership: it would end up in the unnamed module of this
+            // class loader and fail with IllegalAccessError as soon as it touches a non-exported JDK package.
+            loadedClass = deferClass;
         } else {
             loadedClass = loadUnmockedClass(className, deferClass.getProtectionDomain());
         }
         return loadedClass;
+    }
+    
+    /**
+     * {@code Class.getModule()} and {@code Module.getPackages()} (Java 9+), looked up reflectively so the code stays
+     * Java 8 compatible. {@code null} on Java 8, where there are no modules.
+     */
+    private static final Method GET_MODULE;
+    private static final Method IS_NAMED;
+    private static final Method GET_PACKAGES;
+    
+    static {
+        Method getModule = null;
+        Method isNamed = null;
+        Method getPackages = null;
+        try {
+            getModule = Class.class.getMethod("getModule");
+            isNamed = getModule.getReturnType().getMethod("isNamed");
+            getPackages = getModule.getReturnType().getMethod("getPackages");
+        } catch (NoSuchMethodException e) {
+            // Java 8
+        }
+        GET_MODULE = getModule;
+        IS_NAMED = isNamed;
+        GET_PACKAGES = getPackages;
+    }
+    
+    /**
+     * Whether an unmodified class can be used as is instead of being redefined by this class loader: only if it
+     * belongs to a named module (Java 9+) and no class of that module is prepared for test. A modified class of
+     * that module is defined in the unnamed module of this class loader and then needs its non-exported
+     * helpers (e.g. {@code com.sun.naming.internal.*} for {@code javax.naming.InitialContext}) redefined here as well.
+     */
+    @SuppressWarnings("unchecked")
+    private boolean canUseOriginalClassOfNamedModule(Class<?> clazz) {
+        if (GET_MODULE == null) {
+            return false;
+        }
+        try {
+            final Object module = GET_MODULE.invoke(clazz);
+            if (!(Boolean) IS_NAMED.invoke(module)) {
+                return false;
+            }
+            return !getConfiguration().mayModifyClassesInPackages((Set<String>) GET_PACKAGES.invoke(module));
+        } catch (Exception e) {
+            return false;
+        }
     }
     
     public void setMockTransformerChain(MockTransformerChain mockTransformerChain) {

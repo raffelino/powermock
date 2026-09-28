@@ -219,6 +219,32 @@ public class MockClassLoaderConfiguration {
         }
     }
     
+    /**
+     * Conservatively checks whether any class that is prepared for test (see {@link #addClassesToModify(String...)})
+     * may live in one of the given packages. Wildcard entries are compared by their literal prefix, so e.g.
+     * {@code "*"} or {@code "*Test"} match every package.
+     */
+    boolean mayModifyClassesInPackages(Set<String> packages) {
+        synchronized (modify) {
+            for (String entry : modify) {
+                final int wildcard = entry.indexOf('*');
+                final String prefix;
+                if (wildcard >= 0) {
+                    prefix = entry.substring(0, wildcard);
+                } else {
+                    final int lastDot = entry.lastIndexOf('.');
+                    prefix = lastDot < 0 ? "" : entry.substring(0, lastDot + 1);
+                }
+                for (String packageName : packages) {
+                    if ((packageName + ".").startsWith(prefix) || packageName.startsWith(prefix)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+    
     private boolean shouldModifyAll() {
         return (modify.size() == 1 && modify.iterator().next().equals(MODIFY_ALL_CLASSES));
     }
