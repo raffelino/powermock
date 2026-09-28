@@ -29,7 +29,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 import java.net.URLConnection;
+import java.lang.reflect.Method;
 import java.security.ProtectionDomain;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * <p>
@@ -74,6 +77,8 @@ public abstract class MockClassLoader extends DeferSupportingClassLoader {
      * @param packagesToDefer Classes in these packages will be defered to the system
      *                        class-loader.
      */
+    private final Map<String, Boolean> preparedClassInNamedModule = new ConcurrentHashMap<String, Boolean>();
+
     protected MockClassLoader(String[] classesToMock, String[] packagesToDefer) {
         this(new MockClassLoaderConfiguration(classesToMock, packagesToDefer), new JavaAssistClassWrapperFactory());
     }
@@ -100,6 +105,12 @@ public abstract class MockClassLoader extends DeferSupportingClassLoader {
         Class<?> deferClass = deferTo.loadClass(className);
         if (getConfiguration().shouldMockClass(className)) {
             loadedClass = loadMockClass(className, deferClass.getProtectionDomain());
+        } else if (isInNamedModule(deferClass) && !preparesClassesOfNamedModules()) {
+            // A JDK class (e.g. javax.crypto.Cipher) redefined here would land in the unnamed module and
+            // lose access to the non-exported packages of its own module, so use the original class.
+            // When JDK classes are prepared for test they are redefined here, and then the JDK classes
+            // they use have to be redefined as well (as before), to keep their packages consistent.
+            loadedClass = deferClass;
         } else {
             loadedClass = loadUnmockedClass(className, deferClass.getProtectionDomain());
         }
@@ -190,4 +201,61 @@ public abstract class MockClassLoader extends DeferSupportingClassLoader {
     }
     
     protected abstract byte[] defineAndTransformClass(final String name, final ProtectionDomain protectionDomain) throws ClassNotFoundException;
+
+    private boolean preparesClassesOfNamedModules() {
+        if (GET_MODULE == null) {
+            return false;
+        }
+        for (String classToModify : getConfiguration().getClassesToModify()) {
+            if (classToModify.contains("*")) {
+                // e.g. MODIFY_ALL_CLASSES: may include JDK classes, keep the previous behaviour
+                return true;
+            }
+            Boolean named = preparedClassInNamedModule.get(classToModify);
+            if (named == null) {
+                try {
+                    named = isInNamedModule(deferTo.loadClass(classToModify));
+                } catch (Throwable notLoadable) {
+                    named = Boolean.FALSE;
+                }
+                preparedClassInNamedModule.put(classToModify, named);
+            }
+            if (named) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * {@code Class.getModule().isNamed()}, looked up reflectively to stay Java 8 compatible
+     * (always {@code false} on Java 8, where there are no modules).
+     */
+    private static boolean isInNamedModule(Class<?> type) {
+        if (GET_MODULE == null) {
+            return false;
+        }
+        try {
+            Object module = GET_MODULE.invoke(type);
+            return (Boolean) IS_NAMED.invoke(module);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static final Method GET_MODULE;
+    private static final Method IS_NAMED;
+
+    static {
+        Method getModule = null;
+        Method isNamed = null;
+        try {
+            getModule = Class.class.getMethod("getModule");
+            isNamed = getModule.getReturnType().getMethod("isNamed");
+        } catch (Exception java8) {
+            getModule = null;
+        }
+        GET_MODULE = getModule;
+        IS_NAMED = isNamed;
+    }
 }

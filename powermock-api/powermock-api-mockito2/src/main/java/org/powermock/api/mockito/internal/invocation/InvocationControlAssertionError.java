@@ -29,7 +29,7 @@ public class InvocationControlAssertionError {
     private static final String UNDESIRED_INVOCATION_TEXT = " Undesired invocation:";
     private static final String POWER_MOCKITO_CLASS_NAME = "org.powermock.api.mockito.PowerMockito";
 
-    public static void updateErrorMessageForVerifyNoMoreInteractions(AssertionError errorToUpdate) {
+    public static AssertionError updateErrorMessageForVerifyNoMoreInteractions(AssertionError errorToUpdate) {
         /*
          * VerifyNoMoreInteractions failed, we need to update the error message.
          */
@@ -52,7 +52,7 @@ public class InvocationControlAssertionError {
 
         if (verifyNoMoreInteractionsInvocation == null) {
             // Something unexpected happened, just return
-            return;
+            return errorToUpdate;
         }
         String message = errorToUpdate.getMessage();
         StringBuilder builder = new StringBuilder();
@@ -63,17 +63,17 @@ public class InvocationControlAssertionError {
         builder.replace(startOfVerifyNoMoreInteractionsInvocation, endOfVerifyNoMoreInteractionsInvocation,
                         verifyNoMoreInteractionsInvocation);
         builder.delete(builder.indexOf("\n", endOfVerifyNoMoreInteractionsInvocation + 1), builder.lastIndexOf("\n"));
-        Whitebox.setInternalState(errorToUpdate, "detailMessage", builder.toString());
+        return withMessage(errorToUpdate, builder.toString());
     }
 
-    public static void updateErrorMessageForMethodInvocation(AssertionError errorToUpdate) {
+    public static AssertionError updateErrorMessageForMethodInvocation(AssertionError errorToUpdate) {
         /*
          * We failed to verify the new substitution mock. This happens when, for
          * example, the user has done something like
          * whenNew(MyClass.class).thenReturn(myMock).times(3) when in fact an
          * instance of MyClass has been created less or more times than 3.
          */
-        Whitebox.setInternalState(errorToUpdate, "detailMessage", "\n" + changeMessageContent(errorToUpdate.getMessage()));
+        return withMessage(errorToUpdate, "\n" + changeMessageContent(errorToUpdate.getMessage()));
     }
 
     public static void throwAssertionErrorForNewSubstitutionFailure(AssertionError oldError, Class<?> type) {
@@ -163,4 +163,35 @@ public class InvocationControlAssertionError {
         }
     }
 
+
+    /**
+     * Returns an error carrying {@code message}. The message of {@code error} is replaced in place when
+     * {@code Throwable.detailMessage} is accessible (up to Java 15, or with {@code java.lang} opened).
+     * Otherwise a copy of the same type (falling back to {@link AssertionError}) with the same stack trace
+     * and cause is created, so the caller must throw the returned error.
+     */
+    private static AssertionError withMessage(AssertionError error, String message) {
+        try {
+            Whitebox.setInternalState(error, "detailMessage", message);
+            return error;
+        } catch (RuntimeException inaccessible) {
+            AssertionError copy = copyOf(error, message);
+            copy.setStackTrace(error.getStackTrace());
+            if (error.getCause() != null && copy.getCause() == null) {
+                copy.initCause(error.getCause());
+            }
+            for (Throwable suppressed : error.getSuppressed()) {
+                copy.addSuppressed(suppressed);
+            }
+            return copy;
+        }
+    }
+
+    private static AssertionError copyOf(AssertionError error, String message) {
+        try {
+            return error.getClass().getConstructor(String.class).newInstance(message);
+        } catch (Exception noStringConstructor) {
+            return new AssertionError(message);
+        }
+    }
 }

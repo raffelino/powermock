@@ -148,6 +148,12 @@ public class MockClassLoaderConfiguration {
         return shouldModify(className) && !shouldLoadWithMockClassloaderWithoutModifications(className);
     }
     
+    String[] getClassesToModify() {
+        synchronized (modify) {
+            return modify.toArray(new String[0]);
+        }
+    }
+    
     String[] getDeferPackages() {
         return ArrayUtil.clone(deferPackages);
     }
