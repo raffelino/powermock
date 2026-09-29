@@ -33,6 +33,10 @@ public class TestClassInClassLoader {
 
     public static TestClassInClassLoader of(ExtensionContext context) {
         Class<?> originalTestClass = context.getRequiredTestClass();
+        // @Nested classes share the MockClassLoader of their outermost (top-level) test class
+        while (originalTestClass.getEnclosingClass() != null && !java.lang.reflect.Modifier.isStatic(originalTestClass.getModifiers())) {
+            originalTestClass = originalTestClass.getEnclosingClass();
+        }
         return context.getStore(NAMESPACE).getOrComputeIfAbsent(
             originalTestClass, TestClassInClassLoader::new, TestClassInClassLoader.class);
     }
@@ -46,13 +50,44 @@ public class TestClassInClassLoader {
     }
 
     public void createShadowInstance(Object originalInstance, ExtensionContext context) throws Exception {
-        // ponytail: no-arg constructor only (no constructor parameter resolution), add when a test needs it
-        Constructor<?> constructor = testClass.getDeclaredConstructor();
+        java.util.LinkedList<Object> enclosing = new java.util.LinkedList<>();
+        for (Object o = outerInstanceOf(originalInstance); o != null; o = outerInstanceOf(o)) {
+            enclosing.addFirst(o);
+        }
+        Object outerShadow = null;
+        for (Object outer : enclosing) {
+            Object existing = context.getStore(NAMESPACE).get(outer);
+            outerShadow = existing != null ? existing : newShadow(outer, outerShadow, context);
+        }
+        newShadow(originalInstance, outerShadow, context);
+    }
+
+    private static Object outerInstanceOf(Object instance) throws IllegalAccessException {
+        Class<?> c = instance.getClass();
+        if (c.getEnclosingClass() == null || java.lang.reflect.Modifier.isStatic(c.getModifiers())) {
+            return null;
+        }
+        for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+            if (f.isSynthetic() && f.getType() == c.getEnclosingClass()) {
+                f.setAccessible(true);
+                return f.get(instance);
+            }
+        }
+        return null;
+    }
+
+    private Object newShadow(Object originalInstance, Object outerShadow, ExtensionContext context) throws Exception {
+        Class<?> shadowClass = Class.forName(originalInstance.getClass().getName(), false, classLoader);
+        final Constructor<?> constructor = outerShadow == null
+            ? shadowClass.getDeclaredConstructor()
+            : shadowClass.getDeclaredConstructor(outerShadow.getClass());
         constructor.setAccessible(true);
-        Object shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, constructor::newInstance);
+        final Object[] args = outerShadow == null ? new Object[0] : new Object[]{outerShadow};
+        Object shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, () -> constructor.newInstance(args));
         AnnotationInjector.inject(classLoader, shadow);
         // Store keys use equals(); test classes don't override it, so this is identity.
         context.getStore(NAMESPACE).put(originalInstance, shadow);
+        return shadow;
     }
 
     public Object getShadowInstance(Object originalInstance, ExtensionContext context) {
