@@ -12,6 +12,7 @@ import java.lang.reflect.Method;
 public class AnnotationProcessor {
 
     private static final String ENABLER = "org.powermock.api.extension.listener.AnnotationEnabler";
+    private static final String EASYMOCK_SUPPORT = "org.powermock.api.extension.listener.EasyMockAnnotationSupport";
 
     public static void beforeEach(ExtensionContext context) throws Throwable {
         final TestClassInClassLoader loaded = TestClassInClassLoader.of(context);
@@ -29,6 +30,14 @@ public class AnnotationProcessor {
                 Object enabler = enablerClass.getConstructor().newInstance();
                 Method before = enablerClass.getMethod("beforeTestMethod", Object.class, Method.class, Object[].class);
                 before.invoke(enabler, shadow, testMethod, new Object[0]);
+                // Both API modules ship a class named ENABLER; when both are on the classpath only one wins,
+                // so the EasyMock annotations are additionally processed directly.
+                try {
+                    Class<?> easyMock = Class.forName(EASYMOCK_SUPPORT, true, cl);
+                    easyMock.getMethod("injectMocks").invoke(easyMock.getConstructor(Object.class).newInstance(shadow));
+                } catch (ClassNotFoundException ignored) {
+                    // EasyMock API not on the classpath
+                }
                 return null;
             });
         } catch (InvocationTargetException e) {
