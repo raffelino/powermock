@@ -86,16 +86,15 @@ final class ArgumentConverter {
                 constructor = c;
             }
         }
-        constructor.setAccessible(true);
-        Class<?>[] types = constructor.getParameterTypes();
-        Object[] args = new Object[types.length];
-        for (int i = 0; i < types.length; i++) {
-            args[i] = defaultValue(types[i]);
+        if (constructor.getParameterCount() == 0) {
+            constructor.setAccessible(true);
+            return constructor.newInstance();
         }
-        Object shadow = constructor.newInstance(args);
-        if (types.length > 0) {
-            copyFields(original, shadow, classLoader, false);
-        }
+        // Constructor-injected test class: calling the constructor with placeholder arguments would break
+        // constructors that use their parameters (NPE, wrong derived state). Allocate the shadow without running
+        // a constructor and take every field, including derived state, from the original that Jupiter constructed.
+        Object shadow = org.powermock.reflect.Whitebox.newInstance(testClass);
+        copyFields(original, shadow, classLoader, false);
         return shadow;
     }
 
