@@ -46,10 +46,24 @@ public class TestClassInClassLoader {
     }
 
     public void createShadowInstance(Object originalInstance, ExtensionContext context) throws Exception {
-        // ponytail: no-arg constructor only (no constructor parameter resolution), add when a test needs it
-        Constructor<?> constructor = testClass.getDeclaredConstructor();
-        constructor.setAccessible(true);
-        Object shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, constructor::newInstance);
+        Object shadow;
+        Constructor<?> constructor = null;
+        try {
+            constructor = testClass.getDeclaredConstructor();
+        } catch (NoSuchMethodException e) {
+            // constructor with Jupiter-resolved parameters (or an inner @Nested class): mirror the original's state
+        }
+        if (constructor != null) {
+            constructor.setAccessible(true);
+            shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, constructor::newInstance);
+        } else {
+            final Object original = originalInstance;
+            shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, () -> {
+                Object copy = new org.objenesis.ObjenesisStd(true).newInstance(testClass);
+                new CrossLoaderConverter(classLoader).seed(original, copy).copyFields(original, copy);
+                return copy;
+            });
+        }
         // Store keys use equals(); test classes don't override it, so this is identity.
         context.getStore(NAMESPACE).put(originalInstance, shadow);
     }
