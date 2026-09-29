@@ -35,6 +35,9 @@ public class TestClassInClassLoader {
     /** Shadow instances by Jupiter's (original) test instance, including enclosing instances of @Nested classes. */
     private final Map<Object, Object> shadows = new IdentityHashMap<>();
 
+    /** Constructor arguments Jupiter resolved for its instances, until the shadow is created. */
+    private final Map<Object, Object[]> constructorArguments = new IdentityHashMap<>();
+
     private final ClassLoader classLoader;
     private final Class<?> testClass;
 
@@ -78,9 +81,33 @@ public class TestClassInClassLoader {
             constructor = shadowClass.getDeclaredConstructor(enclosingShadow.getClass());
             args = new Object[]{enclosingShadow};
         } else {
-            // ponytail: no-arg constructor only (no constructor parameter resolution), add when a test needs it
-            constructor = shadowClass.getDeclaredConstructor();
-            args = new Object[0];
+            Object[] resolved;
+            synchronized (shadows) {
+                resolved = constructorArguments.remove(originalInstance);
+            }
+            if (resolved == null || resolved.length == 0) {
+                constructor = shadowClass.getDeclaredConstructor();
+                args = new Object[0];
+            } else {
+                // constructor parameters resolved by Jupiter (TestInfo, custom ParameterResolvers ...)
+                Class<?>[] originalTypes = originalClass.getDeclaredConstructors().length == 1
+                    ? originalClass.getDeclaredConstructors()[0].getParameterTypes() : null;
+                Constructor<?> match = null;
+                for (Constructor<?> candidate : shadowClass.getDeclaredConstructors()) {
+                    if (candidate.getParameterCount() == resolved.length
+                        && (originalTypes == null || sameNames(candidate.getParameterTypes(), originalTypes))) {
+                        match = candidate;
+                    }
+                }
+                if (match == null) {
+                    throw new IllegalStateException("No constructor of " + shadowClass + " for " + resolved.length + " arguments");
+                }
+                constructor = match;
+                args = new Object[resolved.length];
+                for (int i = 0; i < resolved.length; i++) {
+                    args[i] = ClassLoaderBridge.toLoader(resolved[i], classLoader);
+                }
+            }
         }
         constructor.setAccessible(true);
         final Object shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, () -> constructor.newInstance(args));
@@ -92,6 +119,21 @@ public class TestClassInClassLoader {
         synchronized (shadows) {
             shadows.put(originalInstance, shadow);
         }
+    }
+
+    public void rememberConstructorArguments(Object originalInstance, Object[] arguments) {
+        synchronized (shadows) {
+            constructorArguments.put(originalInstance, arguments);
+        }
+    }
+
+    private static boolean sameNames(Class<?>[] a, Class<?>[] b) {
+        for (int i = 0; i < a.length; i++) {
+            if (!a[i].getName().equals(b[i].getName())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static Object enclosingInstanceOf(Object instance) throws IllegalAccessException {

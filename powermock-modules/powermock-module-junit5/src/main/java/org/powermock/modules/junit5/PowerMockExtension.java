@@ -9,6 +9,7 @@ import org.powermock.modules.junit5.internal.MockClassLoaderInvoker;
 import org.powermock.modules.junit5.internal.PowerMockStateCleaner;
 import org.powermock.modules.junit5.internal.TestClassInClassLoader;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 
 /**
@@ -25,6 +26,14 @@ public class PowerMockExtension implements TestInstancePostProcessor, Invocation
     @Override
     public void postProcessTestInstance(Object testInstance, ExtensionContext context) throws Exception {
         TestClassInClassLoader.of(context).createShadowInstance(testInstance, context);
+    }
+
+    @Override
+    public <T> T interceptTestClassConstructor(Invocation<T> invocation, ReflectiveInvocationContext<Constructor<T>> ic,
+                                               ExtensionContext context) throws Throwable {
+        T instance = invocation.proceed();
+        TestClassInClassLoader.of(context).rememberConstructorArguments(instance, ic.getArguments().toArray());
+        return instance;
     }
 
     @Override
