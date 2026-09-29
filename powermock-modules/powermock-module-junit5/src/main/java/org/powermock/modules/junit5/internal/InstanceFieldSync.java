@@ -33,7 +33,9 @@ final class InstanceFieldSync {
                     target.setAccessible(true);
                     Object value = source.get(from);
                     Class<?> type = target.getType();
-                    if (type.isPrimitive() || value == null || type.isInstance(value)) {
+                    if (value != null && (type.isPrimitive() || type.isInstance(value))) {
+                        // nulls are never copied: a null on one side means "not transferable", and copying it would wipe
+                        // fields injected on the other side (e.g. @Mock fields set on the shadow instance)
                         target.set(to, value);
                     }
                 } catch (NoSuchFieldException | IllegalAccessException | RuntimeException ignored) {
