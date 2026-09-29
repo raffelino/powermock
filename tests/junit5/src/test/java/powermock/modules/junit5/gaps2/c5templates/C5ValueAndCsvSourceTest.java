@@ -1,5 +1,7 @@
 package powermock.modules.junit5.gaps2.c5templates;
 
+import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.TestFactory;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -10,8 +12,12 @@ import powermock.modules.junit5.gaps2.support.Ids;
 import powermock.modules.junit5.gaps2.support.Ticket;
 import powermock.modules.junit5.gaps2.support.Tier;
 
+import java.util.Arrays;
+import java.util.stream.Stream;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.DynamicTest.dynamicTest;
 import static org.powermock.api.mockito.PowerMockito.doReturn;
 import static org.powermock.api.mockito.PowerMockito.mockStatic;
 import static org.powermock.api.mockito.PowerMockito.spy;
@@ -21,8 +27,9 @@ import static org.powermock.api.mockito.PowerMockito.when;
  * C5: @ParameterizedTest with @ValueSource/@CsvSource. Jupiter creates the arguments outside the test (implicit
  * conversion to a user class and to a user enum, Class literals); inside the test they must be the prepared
  * classes' objects: static mocking inside their methods, final-method stubbing, enum constants and Class
- * literals identical to the ones the test code sees.
- * 8 invocations; the two primitive-argument invocations are controls.
+ * literals identical to the ones the test code sees. A @TestFactory over the enum constants: each dynamic test
+ * mocks the static itself (no reset between dynamic tests is required) and the constant's method must use it.
+ * 10 invocations (8 parameterized, 2 dynamic); the two primitive-argument invocations are controls.
  */
 @ExtendWith(PowerMockExtension.class)
 @PrepareForTest({Ids.class, Ticket.class, Tier.class})
@@ -72,5 +79,14 @@ class C5ValueAndCsvSourceTest {
         doReturn("stubbed-code").when(spied).code();
         assertEquals("stubbed-code", spied.code());
         assertEquals("T-9", ticket.code());
+    }
+
+    @TestFactory
+    Stream<DynamicTest> dynamicTestsOverEnumConstantsUseMockedStatic() {
+        return Arrays.stream(Tier.values()).map(tier -> dynamicTest("tier " + tier, () -> {
+            mockStatic(Ids.class);
+            when(Ids.next()).thenReturn("dyn");
+            assertEquals(tier.name().toLowerCase() + "-dyn", tier.tagged());
+        }));
     }
 }

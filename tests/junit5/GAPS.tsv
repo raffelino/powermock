@@ -13,8 +13,8 @@ C4	powermock.modules.junit5.gaps.c4extensions.C4PowerMockThenMockitoExtensionTes
 C4	powermock.modules.junit5.gaps.c4extensions.C4MockitoThenPowerMockExtensionTest	3
 C4	powermock.modules.junit5.gaps.c4extensions.C4PowerMockThenCustomExtensionTest	4
 C4	powermock.modules.junit5.gaps.c4extensions.C4CustomThenPowerMockExtensionTest	4
-C5	powermock.modules.junit5.gaps2.c5templates.C5ValueAndCsvSourceTest	8
-C5	powermock.modules.junit5.gaps2.c5templates.C5MethodSourceAndRepeatedTest	6
+C5	powermock.modules.junit5.gaps2.c5templates.C5ValueAndCsvSourceTest	10
+C5	powermock.modules.junit5.gaps2.c5templates.C5MethodSourceAndRepeatedTest	8
 C5	powermock.modules.junit5.gaps2.c5templates.C5TestFactoryTest	6
 C6	powermock.modules.junit5.gaps2.c6perclass.C6BeforeAllMockTest	3
 C6	powermock.modules.junit5.gaps2.c6perclass.C6InstanceStateTest	3

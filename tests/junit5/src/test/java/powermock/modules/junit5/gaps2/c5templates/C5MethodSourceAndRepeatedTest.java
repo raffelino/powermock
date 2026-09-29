@@ -1,7 +1,9 @@
 package powermock.modules.junit5.gaps2.c5templates;
 
+import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.RepetitionInfo;
+import org.junit.jupiter.api.TestFactory;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -16,6 +18,7 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.DynamicTest.dynamicTest;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
 import static org.powermock.api.mockito.PowerMockito.mock;
 import static org.powermock.api.mockito.PowerMockito.mockStatic;
@@ -26,7 +29,9 @@ import static org.powermock.api.mockito.PowerMockito.when;
  * C5: @MethodSource supplying objects of a prepared user class (created by the factory method, which Jupiter
  * calls itself): inside the test they must use the mocked static and allow final-method stubbing.
  * @RepeatedTest with RepetitionInfo: fresh PowerMock state in every repetition.
- * 6 invocations; the two repetitions are controls.
+ * @TestFactory over the same source: each dynamic test mocks the static itself (no reset between dynamic tests
+ * is required) and the sourced object must use that mock.
+ * 8 invocations (4 parameterized, 2 dynamic, 2 repetitions); the two repetitions are controls.
  */
 @ExtendWith(PowerMockExtension.class)
 @PrepareForTest({Ids.class, Order.class, TaxRates.class})
@@ -54,6 +59,16 @@ class C5MethodSourceAndRepeatedTest {
         assertEquals(12, spied.gross());
         assertEquals(order.id(), spied.id());
         assertEquals(grossAtTwentyPercent, order.gross());
+    }
+
+    @TestFactory
+    Stream<DynamicTest> dynamicTestsOverSourcedUserObjectsUseMockedStatic() {
+        return orders().map(a -> dynamicTest("zero tax " + a.get()[0], () -> {
+            mockStatic(TaxRates.class);
+            when(TaxRates.percent()).thenReturn(0);
+            Order order = (Order) a.get()[0];
+            assertEquals(order.net(), order.gross());
+        }));
     }
 
     @RepeatedTest(2)
