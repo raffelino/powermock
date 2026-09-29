@@ -6,6 +6,10 @@ import org.powermock.tests.utils.impl.MockPolicyInitializerImpl;
 import org.powermock.tests.utils.impl.PowerMockIgnorePackagesExtractorImpl;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+import java.util.IdentityHashMap;
+import java.util.Map;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
@@ -19,7 +23,17 @@ public class TestClassInClassLoader {
 
     private static final ExtensionContext.Namespace NAMESPACE = ExtensionContext.Namespace.create(TestClassInClassLoader.class);
 
-    private static final String ANNOTATION_ENABLER = "org.powermock.api.extension.listener.AnnotationEnabler";
+    /**
+     * Both mocking APIs ship an {@code org.powermock.api.extension.listener.AnnotationEnabler}; only the first on
+     * the class path is visible under that name, so EasyMock's is also looked up by its (deprecated) alias.
+     */
+    private static final String[] ANNOTATION_ENABLERS = {
+        "org.powermock.api.extension.listener.AnnotationEnabler",
+        "org.powermock.api.easymock.powermocklistener.AnnotationEnabler"
+    };
+
+    /** Shadow instances by Jupiter's (original) test instance, including enclosing instances of @Nested classes. */
+    private final Map<Object, Object> shadows = new IdentityHashMap<>();
 
     private final ClassLoader classLoader;
     private final Class<?> testClass;
@@ -37,6 +51,9 @@ public class TestClassInClassLoader {
 
     public static TestClassInClassLoader of(ExtensionContext context) {
         Class<?> originalTestClass = context.getRequiredTestClass();
+        while (originalTestClass.getEnclosingClass() != null && !Modifier.isStatic(originalTestClass.getModifiers())) {
+            originalTestClass = originalTestClass.getEnclosingClass(); // @Nested: share the outermost class's loader
+        }
         return context.getStore(NAMESPACE).getOrComputeIfAbsent(
             originalTestClass, TestClassInClassLoader::new, TestClassInClassLoader.class);
     }
@@ -50,16 +67,44 @@ public class TestClassInClassLoader {
     }
 
     public void createShadowInstance(Object originalInstance, ExtensionContext context) throws Exception {
-        // ponytail: no-arg constructor only (no constructor parameter resolution), add when a test needs it
-        Constructor<?> constructor = testClass.getDeclaredConstructor();
+        Class<?> originalClass = originalInstance.getClass();
+        final Class<?> shadowClass = Class.forName(originalClass.getName(), false, classLoader);
+        final Object[] args;
+        final Constructor<?> constructor;
+        Object enclosingOriginal = enclosingInstanceOf(originalInstance);
+        if (enclosingOriginal != null) {
+            // @Nested (inner) class: the shadow inner instance must belong to the shadow of the enclosing instance
+            Object enclosingShadow = getShadowInstance(enclosingOriginal, context);
+            constructor = shadowClass.getDeclaredConstructor(enclosingShadow.getClass());
+            args = new Object[]{enclosingShadow};
+        } else {
+            // ponytail: no-arg constructor only (no constructor parameter resolution), add when a test needs it
+            constructor = shadowClass.getDeclaredConstructor();
+            args = new Object[0];
+        }
         constructor.setAccessible(true);
-        final Object shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, constructor::newInstance);
+        final Object shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, () -> constructor.newInstance(args));
         MockClassLoaderInvoker.withContextClassLoader(classLoader, () -> {
             injectAnnotatedMocks(shadow);
             return null;
         });
-        // Store keys use equals(); test classes don't override it, so this is identity.
-        context.getStore(NAMESPACE).put(originalInstance, shadow);
+        synchronized (shadows) {
+            shadows.put(originalInstance, shadow);
+        }
+    }
+
+    private static Object enclosingInstanceOf(Object instance) throws IllegalAccessException {
+        Class<?> type = instance.getClass();
+        if (type.getEnclosingClass() == null || Modifier.isStatic(type.getModifiers())) {
+            return null;
+        }
+        for (Field field : type.getDeclaredFields()) {
+            if (field.isSynthetic() && field.getType() == type.getEnclosingClass()) {
+                field.setAccessible(true);
+                return field.get(instance);
+            }
+        }
+        return null;
     }
 
     /**
@@ -68,12 +113,18 @@ public class TestClassInClassLoader {
      * the JUnit 4 runner and the TestNG module do via the API's AnnotationEnabler.
      */
     private void injectAnnotatedMocks(Object shadow) throws Exception {
-        Class<?> enablerClass;
-        try {
-            enablerClass = Class.forName(ANNOTATION_ENABLER, true, classLoader);
-        } catch (ClassNotFoundException e) {
-            return; // no PowerMock mocking API with annotation support on the class path
+        for (String enablerName : ANNOTATION_ENABLERS) {
+            Class<?> enablerClass;
+            try {
+                enablerClass = Class.forName(enablerName, true, classLoader);
+            } catch (ClassNotFoundException e) {
+                continue; // this mocking API is not on the class path
+            }
+            invokeEnabler(enablerClass, shadow);
         }
+    }
+
+    private static void invokeEnabler(Class<?> enablerClass, Object shadow) throws Exception {
         Object enabler = enablerClass.getDeclaredConstructor().newInstance();
         Method beforeTestMethod = enablerClass.getMethod("beforeTestMethod", Object.class, Method.class, Object[].class);
         try {
@@ -88,7 +139,10 @@ public class TestClassInClassLoader {
     }
 
     public Object getShadowInstance(Object originalInstance, ExtensionContext context) {
-        Object shadow = context.getStore(NAMESPACE).get(originalInstance);
+        Object shadow;
+        synchronized (shadows) {
+            shadow = shadows.get(originalInstance);
+        }
         if (shadow == null) {
             throw new IllegalStateException("No MockClassLoader instance for " + originalInstance);
         }
