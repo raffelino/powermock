@@ -34,6 +34,10 @@ final class FieldSync {
                     Object value = source.get(from);
                     if (value == null ? !target.getType().isPrimitive() : isAssignable(target.getType(), value)) {
                         target.set(to, value);
+                    } else if (value != null && target.get(to) == null && isMockitoMock(source)) {
+                        // another extension (e.g. MockitoExtension) mocked a type that differs across loaders:
+                        // give the shadow its own mock of the MockClassLoader's version of the type
+                        target.set(to, mockInLoader(target.getType()));
                     }
                 } catch (NoSuchFieldException | IllegalAccessException | RuntimeException ignored) {
                     // field not present or not accessible on the other side: leave it alone
@@ -41,6 +45,27 @@ final class FieldSync {
             }
             fromClass = fromClass.getSuperclass();
             toClass = toClass.getSuperclass();
+        }
+    }
+
+    private static boolean isMockitoMock(Field field) {
+        for (java.lang.annotation.Annotation a : field.getAnnotations()) {
+            String name = a.annotationType().getName();
+            if (name.equals("org.mockito.Mock") || name.equals("org.mockito.Spy")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Object mockInLoader(final Class<?> type) throws IllegalAccessException {
+        final ClassLoader loader = type.getClassLoader();
+        try {
+            return MockClassLoaderInvoker.withContextClassLoader(loader, () ->
+                Class.forName("org.powermock.api.mockito.PowerMockito", true, loader)
+                    .getMethod("mock", Class.class).invoke(null, type));
+        } catch (Exception e) {
+            throw new IllegalAccessException("Cannot create mock of " + type + ": " + e);
         }
     }
 
