@@ -19,7 +19,7 @@ public class MockClassLoaderInvoker {
         final Object target = ic.getTarget().isPresent()
             ? loaded.getShadowInstance(ic.getTarget().get(), context)
             : null;
-        final Object[] args = ic.getArguments().toArray();
+        final Object[] args = new CrossClassLoaderConverter(loaded.getClassLoader()).convertAll(ic.getArguments().toArray());
         try {
             withContextClassLoader(loaded.getClassLoader(), () -> method.invoke(target, args));
         } catch (InvocationTargetException e) {
