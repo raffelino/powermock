@@ -99,7 +99,13 @@ public final class ClassLoaderBridge {
                     if (annotatedOnly && value == null) {
                         continue;
                     }
-                    targetField.set(to, convert(value, classLoader, done));
+                    Object converted = convert(value, classLoader, done);
+                    if (converted != null && !wrap(targetField.getType()).isInstance(converted)) {
+                        // e.g. a mock generated in the test loader by MockitoExtension: its class has no
+                        // equivalent in the MockClassLoader; the shadow keeps its own value
+                        continue;
+                    }
+                    targetField.set(to, converted);
                 } catch (NoSuchFieldException | IllegalAccessException e) {
                     throw new IllegalStateException("Cannot copy field " + field + " into MockClassLoader", e);
                 }
@@ -107,6 +113,13 @@ public final class ClassLoaderBridge {
             source = source.getSuperclass();
             target = target.getSuperclass();
         }
+    }
+
+    private static Class<?> wrap(Class<?> type) {
+        if (!type.isPrimitive()) {
+            return type;
+        }
+        return java.lang.reflect.Array.get(Array.newInstance(type, 1), 0).getClass();
     }
 
     private static Class<?> loadEquivalent(Class<?> type, ClassLoader classLoader) {
