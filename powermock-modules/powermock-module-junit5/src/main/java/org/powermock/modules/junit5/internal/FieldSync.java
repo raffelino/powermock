@@ -26,11 +26,24 @@ final class FieldSync {
                 }
                 try {
                     Field target = toClass.getDeclaredField(source.getName());
-                    if (Modifier.isStatic(target.getModifiers()) || Modifier.isFinal(target.getModifiers())) {
+                    if (Modifier.isStatic(target.getModifiers())) {
                         continue;
                     }
                     source.setAccessible(true);
                     target.setAccessible(true);
+                    if (isRegisteredExtension(source)) {
+                        // @RegisterExtension objects exist once per side (different loaders): share their state
+                        Object value = source.get(from);
+                        Object targetValue = target.get(to);
+                        if (value != null && targetValue != null && value != targetValue
+                            && value.getClass().getName().equals(targetValue.getClass().getName())) {
+                            copyState(value, targetValue);
+                        }
+                        continue;
+                    }
+                    if (Modifier.isFinal(target.getModifiers())) {
+                        continue;
+                    }
                     Object value = source.get(from);
                     if (value == null) {
                         // never wipe state that exists only on one side (e.g. EasyMock mocks injected into the shadow)
@@ -45,6 +58,41 @@ final class FieldSync {
                     }
                 } catch (NoSuchFieldException | IllegalAccessException | RuntimeException ignored) {
                     // field not present or not accessible on the other side: leave it alone
+                }
+            }
+            fromClass = fromClass.getSuperclass();
+            toClass = toClass.getSuperclass();
+        }
+    }
+
+    private static boolean isRegisteredExtension(Field field) {
+        for (java.lang.annotation.Annotation a : field.getAnnotations()) {
+            if (a.annotationType().getName().equals("org.junit.jupiter.api.extension.RegisterExtension")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Shallow copy of all instance fields (incl. final ones) whose values are assignable on the other side. */
+    private static void copyState(Object from, Object to) {
+        Class<?> fromClass = from.getClass();
+        Class<?> toClass = to.getClass();
+        while (fromClass != null && toClass != null && fromClass != Object.class) {
+            for (Field source : fromClass.getDeclaredFields()) {
+                if (Modifier.isStatic(source.getModifiers())) {
+                    continue;
+                }
+                try {
+                    Field target = toClass.getDeclaredField(source.getName());
+                    source.setAccessible(true);
+                    target.setAccessible(true);
+                    Object value = source.get(from);
+                    if (value == null ? !target.getType().isPrimitive() : isAssignable(target.getType(), value)) {
+                        target.set(to, value);
+                    }
+                } catch (NoSuchFieldException | IllegalAccessException | RuntimeException ignored) {
+                    // not shareable across the loaders: leave it alone
                 }
             }
             fromClass = fromClass.getSuperclass();
