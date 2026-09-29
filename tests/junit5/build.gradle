@@ -14,6 +14,10 @@ dependencies {
         exclude group: 'org.junit.jupiter'
     }
     testImplementation("org.junit.jupiter:junit-jupiter:5.14.4")
+    // Lab 13 round 2: C7 (EngineTestKit) and C8 (EasyMock API)
+    testImplementation("org.junit.platform:junit-platform-testkit:1.14.4")
+    testImplementation project(":powermock-api:powermock-api-easymock")
+    testImplementation("org.easymock:easymock:${easymockVersion}")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.14.4")
 }
 

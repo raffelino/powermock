@@ -58,3 +58,56 @@ Notes for implementers:
 - Jupiter-side assumptions (constructor TestInfo, `@TempDir` field visible to an AfterEachCallback before deletion,
   the custom extension's semantics, MockitoExtension + `@Mock`) were checked by running a copy of these classes with
   PowerMockExtension replaced by a no-op extension (JDK 17): all non-PowerMock parts passed; the copy was deleted.
+
+## Gaps, round 2 (Lab 13)
+
+Acceptance tests for four further capabilities. Package `powermock.modules.junit5.gaps2` (sub-packages
+`c5templates`, `c6perclass`, `c7exceptions`, `c8easymock`; own sample classes and extensions in `gaps2.support`).
+Manifest: 12 lines appended to `tests/junit5/GAPS.tsv`; the number is the count of test INVOCATIONS a correct
+implementation produces (each parameterized invocation, repetition and dynamic test counts as one; @Nested tests count
+for their top-level class). Test dependencies added: `org.junit.platform:junit-platform-testkit:1.14.4` (C7),
+`powermock-api-easymock` and `org.easymock:easymock:${easymockVersion}` (C8).
+
+None of these is satisfied by a solution of C1-C4 (fresh Mockito annotations in the MockClassLoader, one
+MockClassLoader per top-level class incl. @Nested, Jupiter-resolved parameters transferred into the MockClassLoader,
+two-way instance field sync):
+- C5 needs the TestFactory/dynamic-test invocations (not intercepted at all today) to run in the MockClassLoader, and
+  arguments that Jupiter creates itself (Class literals, enum constants, implicit String conversion, @MethodSource
+  objects) mapped onto the MockClassLoader's classes.
+- C6 needs PowerMock state created in a non-static @BeforeAll (spies with stubbed final methods, verification counts
+  of a shared mock) to survive the per-test reset, and PER_CLASS nested instances with their own @BeforeAll.
+- C7 needs exceptions leaving the MockClassLoader to be seen by Jupiter and other extensions with the application
+  class loader's type (instanceof), also from a SEPARATE_THREAD @Timeout, and @RegisterExtension objects shared
+  between Jupiter and the test code.
+- C8 needs PowerMock's EasyMock annotation support (`@Mock`, `@MockNice`, `@MockStrict` of
+  `org.powermock.api.easymock.annotation`), which Mockito's annotation engine does not handle.
+
+Measured with `./gradlew :tests:junit5:clean :tests:junit5:test` (JDK 17 and JDK 8, identical per class): 117 test
+cases in the XML (old 18/18 green; round 1 unchanged, 7 of 51 pass; round 2 see below). "Controls" already pass
+today (at most one third of a class's invocations).
+
+| Class | Cap. | What it demands | Red today (measured, JDK 17 = JDK 8) |
+|-------|------|-----------------|---------------------------------------|
+| C5ValueAndCsvSourceTest | C5 | @ValueSource Class literal is the prepared class (`mockStatic(type)`); @ValueSource String implicitly converted to a user class, @CsvSource enum column and converted user object: static mocking inside their methods, final-method stub on a spy, enum constant identical | 6/8 fail: `IllegalArgumentException: argument type mismatch` (app-loader objects passed to MockClassLoader method), Class literal not the test's class. Controls: 2 int invocations |
+| C5MethodSourceAndRepeatedTest | C5 | @MethodSource objects of a prepared user class use a mocked static (`TaxRates`) and allow final-method stubbing on a spy; @RepeatedTest(2) with RepetitionInfo gets fresh PowerMock state | 4/6 fail: argument type mismatch. Controls: the 2 repetitions |
+| C5TestFactoryTest | C5 | DynamicTests from @TestFactory: `mockStatic`, `whenNew` of a prepared class, mock of a final class inside executables; a static stub set up in the factory is effective in the executable | 5/6 fail: `ClassNotPreparedException` (executables and factory run outside the MockClassLoader), whenNew ineffective, "Cannot mock final class"; the factory with the stub fails as a whole (1 XML case instead of 1 dynamic test). Control: plain @Test |
+| C6BeforeAllMockTest | C6 | PER_CLASS: non-static @BeforeAll creates a mock of a FINAL class and a spy of a prepared class with a stubbed final method; all 3 tests use them; non-static @AfterAll verifies the shared mock/spy were used 3 times | 2/3 fail (whichever tests run after the first): spy stub lost after the first test's reset (`expected 9 but was 5`); @AfterAll `TooFewActualInvocations` (extra `executionError` case) |
+| C6InstanceStateTest | C6 | PER_CLASS: instance state from @BeforeAll carries over (@AfterAll sees all 3 tests), spy with stubbed final method from @BeforeAll works in every test, static stub from @BeforeEach fresh per test | 2/3 fail: spy stub lost after first test (`expected 7 but was 100`) |
+| C6NestedPerClassTest | C6 | @Nested PER_CLASS inner class with its own non-static @BeforeAll (final-class mock), inner tests use inner and outer @BeforeAll mocks, each @BeforeAll ran once | nested class fails as a whole: `NoSuchMethodException Inner.<init>()` (2 XML cases instead of 4). Control: outer test |
+| C7ExceptionHandlerTest | C7 | `UserFailureHandler` (TestExecutionExceptionHandler, `instanceof UserFailure`) swallows user exceptions thrown by a prepared class, by a stubbed static, and under @Timeout SEPARATE_THREAD; its AfterTestExecutionCallback requires the swallow and an empty `getExecutionException()` | 3/4 fail: the UserFailure (MockClassLoader type) is not `instanceof` the handler's UserFailure, rethrown. Control: assertThrows inside the test |
+| C7ReportedExceptionTypeTest | C7 | runs a scenario class (PowerMockExtension + `RecordingWatcher`) through EngineTestKit: failure event, TestWatcher.testFailed and AfterTestExecutionCallback's `getExecutionException()` carry a `UserFailure` (instanceof) with its message; also with @Timeout SEPARATE_THREAD | 2/3 fail: event condition `instanceOf(UserFailure)` not met. Control: successful scenario reported successful |
+| C7RegisterExtensionAndTimeoutTest | C7 | @RegisterExtension instance field is the object Jupiter calls: the test reads what its beforeEach prepared and records what its afterEach checks, also under default @Timeout with final-class mocking; static stub from @BeforeEach works in a SEPARATE_THREAD @Timeout body | 2/3 fail: the test sees a different extension object (`preparedFor()` null). Control: SEPARATE_THREAD |
+| C8AnnotationMockTest | C8 | EasyMock-API `@Mock` (default: unexpected call fails) and `@MockNice` of a final class injected, expect/replayAll/verify | 2/3 fail: fields null. Control: `PowerMock.createMock` of the final class |
+| C8StaticAndNewWithAnnotationsTest | C8 | `mockStatic` + `expect` + `expectNew` returning an annotated `@Mock`, replayAll/verifyAll; `@MockStrict` of a final class checks call order | 2/3 fail: fields null. Control: static + expectNew with programmatic mock |
+| C8ResetBetweenTestsTest | C8 | automatic reset: every test records, replays, verifies the annotated `@Mock` and a static mock (a mock replayed by another test would reject `expect`), no static stub leaks | 2/3 fail: field null. Control: programmatic mocks |
+
+Notes for implementers:
+- The scenario class of C7ReportedExceptionTypeTest (`$Scenario`) consists of parameterized tests with
+  `allowZeroInvocations = true` whose source yields one invocation only while the enclosing test drives it through
+  EngineTestKit, so the build itself reports no test for it. Its failures are deliberate.
+- C8 puts `powermock-api-easymock` next to `powermock-api-mockito2`. Both contain a class
+  `org.powermock.api.extension.listener.AnnotationEnabler`; use `EasyMockAnnotationSupport` (or
+  `org.powermock.api.easymock.powermocklistener.AnnotationEnabler`) rather than the colliding name.
+- C5 dynamic tests: Jupiter runs no afterEach between the dynamic tests of one factory; no test requires a reset there.
+- C6 order independence: every test of a class does the same with the shared objects; which test runs first does not
+  matter for a correct implementation (today, whichever runs first passes).
