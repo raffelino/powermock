@@ -43,9 +43,11 @@ public class AnnotationInjector {
                         (Class<? extends java.lang.annotation.Annotation>) Class.forName(kind[0], true, cl);
                     if (field.isAnnotationPresent(a)) {
                         field.setAccessible(true);
-                        final Method create = powerMock.getMethod(kind[1], Class.class, Method[].class);
+                        // The single-argument variants create full mocks; createMock(type, new Method[0]) would
+                        // create a partial mock that mocks no method at all ("no last call on a mock available").
+                        final Method create = powerMock.getMethod(kind[1], Class.class);
                         final Object mock = MockClassLoaderInvoker.withContextClassLoader(cl,
-                            () -> create.invoke(null, field.getType(), new Method[0]));
+                            () -> create.invoke(null, field.getType()));
                         field.set(instance, mock);
                     }
                 }
