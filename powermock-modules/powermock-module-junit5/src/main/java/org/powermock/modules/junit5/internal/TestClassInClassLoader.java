@@ -65,9 +65,10 @@ public class TestClassInClassLoader {
         Object shadow;
         java.lang.reflect.Field outerField = enclosingInstanceField(originalClass);
         if (outerField == null) {
-            final Constructor<?> constructor = shadowClass.getDeclaredConstructor();
-            constructor.setAccessible(true);
-            shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, constructor::newInstance);
+            // Top-level/static class: constructor-injected (C3) test classes are instantiated with placeholder
+            // arguments and the original's field values are copied over.
+            shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader,
+                () -> ArgumentConverter.instantiate(shadowClass, originalInstance, classLoader));
         } else {
             outerField.setAccessible(true);
             final Object outerShadow = createShadow(outerField.get(originalInstance), context);
