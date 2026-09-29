@@ -54,6 +54,7 @@ public class TestClassInClassLoader {
         context.getStore(NAMESPACE).put(originalInstance, shadow);
         MockClassLoaderInvoker.withContextClassLoader(classLoader, () -> {
             injectMockAnnotations(shadow);
+            injectEasyMockAnnotations(shadow);
             return null;
         });
     }
@@ -63,6 +64,41 @@ public class TestClassInClassLoader {
      * on the shadow instance, like the JUnit 4 runner does, using the AnnotationEnabler of whichever
      * PowerMock API is on the class path, loaded by the MockClassLoader.
      */
+    /**
+     * The Mockito and EasyMock APIs ship an AnnotationEnabler under the same class name, so with both on
+     * the class path only one of them is found above; EasyMock's annotations are therefore injected here.
+     */
+    @SuppressWarnings("unchecked")
+    private void injectEasyMockAnnotations(Object shadow) throws Exception {
+        Class<?> powerMock;
+        try {
+            powerMock = Class.forName("org.powermock.api.easymock.PowerMock", true, classLoader);
+        } catch (ClassNotFoundException e) {
+            return;
+        }
+        String[][] kinds = {
+            {"org.powermock.api.easymock.annotation.Mock", "createMock"},
+            {"org.powermock.api.easymock.annotation.MockNice", "createNiceMock"},
+            {"org.powermock.api.easymock.annotation.MockStrict", "createStrictMock"},
+        };
+        for (Class<?> c = shadow.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+            for (java.lang.reflect.Field field : c.getDeclaredFields()) {
+                for (String[] kind : kinds) {
+                    Class<? extends java.lang.annotation.Annotation> annotation =
+                        (Class<? extends java.lang.annotation.Annotation>) Class.forName(kind[0], true, classLoader);
+                    if (field.isAnnotationPresent(annotation) && !java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
+                        field.setAccessible(true);
+                        if (field.get(shadow) == null) {
+                            Object mock = powerMock.getMethod(kind[1], Class.class, java.lang.reflect.Method[].class)
+                                .invoke(null, field.getType(), new java.lang.reflect.Method[0]);
+                            field.set(shadow, mock);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private void injectMockAnnotations(Object shadow) throws Exception {
         Class<?> enablerClass;
         try {
