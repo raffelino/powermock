@@ -54,7 +54,6 @@ public class TestClassInClassLoader {
         context.getStore(NAMESPACE).put(originalInstance, shadow);
         MockClassLoaderInvoker.withContextClassLoader(classLoader, () -> {
             injectMockAnnotations(shadow);
-            injectEasyMockAnnotations(shadow);
             return null;
         });
     }
@@ -69,6 +68,14 @@ public class TestClassInClassLoader {
      * the class path only one of them is found above; EasyMock's annotations are therefore injected here.
      */
     @SuppressWarnings("unchecked")
+    public void injectEasyMockAnnotations(Object originalInstance, ExtensionContext context) throws Exception {
+        Object shadow = getShadowInstance(originalInstance, context);
+        MockClassLoaderInvoker.withContextClassLoader(classLoader, () -> {
+            injectEasyMockAnnotations(shadow);
+            return null;
+        });
+    }
+
     private void injectEasyMockAnnotations(Object shadow) throws Exception {
         Class<?> powerMock;
         try {
@@ -88,9 +95,10 @@ public class TestClassInClassLoader {
                         (Class<? extends java.lang.annotation.Annotation>) Class.forName(kind[0], true, classLoader);
                     if (field.isAnnotationPresent(annotation) && !java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
                         field.setAccessible(true);
-                        if (field.get(shadow) == null) {
-                            Object mock = powerMock.getMethod(kind[1], Class.class, java.lang.reflect.Method[].class)
-                                .invoke(null, field.getType(), new java.lang.reflect.Method[0]);
+                        {
+                            // overwrite: the Mockito AnnotationEnabler may already have put a Mockito mock here
+                            Object mock = powerMock.getMethod(kind[1], Class.class)
+                                .invoke(null, field.getType());
                             field.set(shadow, mock);
                         }
                     }
