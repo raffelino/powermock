@@ -349,6 +349,8 @@ project(":powermock-modules:powermock-module-junit5") {
     dependencies {
         api(project(":powermock-core"))
         api("org.junit.jupiter:junit-jupiter-api:5.14.4")
+        // only for the helper that runs inside the MockClassLoader when Mockito is on the test classpath
+        compileOnly(project(":powermock-api:powermock-api-mockito2"))
     }
 }
 

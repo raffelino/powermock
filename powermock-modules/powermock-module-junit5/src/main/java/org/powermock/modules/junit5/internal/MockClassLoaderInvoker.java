@@ -5,25 +5,42 @@ import org.junit.jupiter.api.extension.ReflectiveInvocationContext;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.List;
 import java.util.concurrent.Callable;
 
 /**
- * Redirects a Jupiter method invocation (test or lifecycle method) to the same method of the
+ * Redirects a Jupiter method invocation (test, template, factory or lifecycle method) to the same method of the
  * MockClassLoader-loaded test class / shadow instance, with the MockClassLoader as context class loader.
+ * Arguments are converted into the MockClassLoader, instance fields are synchronised before and after, and an
+ * exception leaving the MockClassLoader is converted back to the application class loader's types.
  */
 public class MockClassLoaderInvoker {
 
-    public static void invoke(TestClassInClassLoader loaded, ReflectiveInvocationContext<Method> ic,
-                              ExtensionContext context) throws Throwable {
-        final Method method = findMethod(loaded.getClassLoader(), ic.getExecutable());
-        final Object target = ic.getTarget().isPresent()
+    public static Object invoke(TestClassInClassLoader loaded, ReflectiveInvocationContext<Method> ic,
+                                ExtensionContext context) throws Throwable {
+        ClassLoader mockClassLoader = loaded.getClassLoader();
+        ClassLoader originalLoader = ic.getExecutable().getDeclaringClass().getClassLoader();
+        final Method method = findMethod(mockClassLoader, ic.getExecutable());
+        final ShadowInstance instance = ic.getTarget().isPresent()
             ? loaded.getShadowInstance(ic.getTarget().get(), context)
             : null;
-        final Object[] args = ic.getArguments().toArray();
+        List<Object> arguments = ic.getArguments();
+        final Object[] args = new Object[arguments.size()];
+        for (int i = 0; i < args.length; i++) {
+            args[i] = ObjectTransfer.transfer(arguments.get(i), mockClassLoader, TestClassInClassLoader.counterparts(context));
+        }
+        if (instance != null) {
+            instance.toShadow(TestClassInClassLoader.counterparts(context));
+        }
         try {
-            withContextClassLoader(loaded.getClassLoader(), () -> method.invoke(target, args));
+            final Object target = instance == null ? null : instance.getShadow();
+            return withContextClassLoader(mockClassLoader, () -> method.invoke(target, args));
         } catch (InvocationTargetException e) {
-            throw e.getCause();
+            throw ObjectTransfer.transferThrowable(e.getCause(), originalLoader);
+        } finally {
+            if (instance != null) {
+                instance.toOriginal(TestClassInClassLoader.reverseCounterparts(instance));
+            }
         }
     }
 
@@ -32,8 +49,7 @@ public class MockClassLoaderInvoker {
         Class<?>[] originalTypes = original.getParameterTypes();
         Class<?>[] types = new Class<?>[originalTypes.length];
         for (int i = 0; i < types.length; i++) {
-            types[i] = originalTypes[i].isPrimitive() ? originalTypes[i]
-                : Class.forName(originalTypes[i].getName(), false, classLoader);
+            types[i] = ObjectTransfer.targetClass(originalTypes[i], classLoader);
         }
         Method method = declaringClass.getDeclaredMethod(original.getName(), types);
         method.setAccessible(true);
