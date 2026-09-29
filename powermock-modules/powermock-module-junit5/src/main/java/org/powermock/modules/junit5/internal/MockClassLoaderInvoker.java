@@ -20,13 +20,17 @@ public class MockClassLoaderInvoker {
             ? loaded.getShadowInstance(ic.getTarget().get(), context)
             : null;
         final Object[] args = ArgumentConverter.convert(loaded.getClassLoader(), ic.getArguments().toArray());
+        final Object original = ic.getTarget().orElse(null);
+        InstanceFieldSync.copyWithEnclosing(original, target);
         if (target != null) {
-            ArgumentConverter.copyInjectedFields(ic.getTarget().get(), target, loaded.getClassLoader());
+            ArgumentConverter.copyInjectedFields(original, target, loaded.getClassLoader());
         }
         try {
             return withContextClassLoader(loaded.getClassLoader(), () -> method.invoke(target, args));
         } catch (InvocationTargetException e) {
             throw e.getCause();
+        } finally {
+            InstanceFieldSync.copyWithEnclosing(target, original);
         }
     }
 
