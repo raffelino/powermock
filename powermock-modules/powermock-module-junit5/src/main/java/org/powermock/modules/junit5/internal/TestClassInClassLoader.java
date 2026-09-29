@@ -88,6 +88,7 @@ public class TestClassInClassLoader {
             injectAnnotatedMocks(shadow);
             return null;
         });
+        FieldSync.annotatedMocksToOriginal(shadow, originalInstance);
         synchronized (shadows) {
             shadows.put(originalInstance, shadow);
         }

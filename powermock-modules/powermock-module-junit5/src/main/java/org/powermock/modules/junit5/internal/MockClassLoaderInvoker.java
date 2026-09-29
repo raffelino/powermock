@@ -20,10 +20,21 @@ public class MockClassLoaderInvoker {
             ? loaded.getShadowInstance(ic.getTarget().get(), context)
             : null;
         final Object[] args = ic.getArguments().toArray();
+        for (int i = 0; i < args.length; i++) {
+            args[i] = ClassLoaderBridge.toLoader(args[i], loaded.getClassLoader());
+        }
+        Object original = ic.getTarget().orElse(null);
+        if (original != null) {
+            FieldSync.originalToShadow(original, target, loaded.getClassLoader());
+        }
         try {
             withContextClassLoader(loaded.getClassLoader(), () -> method.invoke(target, args));
         } catch (InvocationTargetException e) {
             throw e.getCause();
+        } finally {
+            if (original != null) {
+                FieldSync.shadowToOriginal(target, original);
+            }
         }
     }
 
