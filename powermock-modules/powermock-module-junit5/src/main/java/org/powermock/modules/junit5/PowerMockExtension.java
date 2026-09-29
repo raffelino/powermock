@@ -53,6 +53,32 @@ public class PowerMockExtension implements TestInstancePostProcessor, Invocation
     }
 
     @Override
+    public <T> T interceptTestFactoryMethod(Invocation<T> invocation, ReflectiveInvocationContext<Method> ic,
+                                            ExtensionContext context) throws Throwable {
+        invocation.skip();
+        @SuppressWarnings("unchecked")
+        T result = (T) MockClassLoaderInvoker.invokeWithResult(TestClassInClassLoader.of(context), ic, context);
+        return result;
+    }
+
+    @Override
+    public void interceptDynamicTest(Invocation<Void> invocation, org.junit.jupiter.api.extension.DynamicTestInvocationContext ic,
+                                     ExtensionContext context) throws Throwable {
+        ExtensionContext classContext = context;
+        while (!classContext.getTestClass().isPresent() && classContext.getParent().isPresent()) {
+            classContext = classContext.getParent().get();
+        }
+        Thread thread = Thread.currentThread();
+        ClassLoader previous = thread.getContextClassLoader();
+        thread.setContextClassLoader(TestClassInClassLoader.of(classContext).getClassLoader());
+        try {
+            invocation.proceed();
+        } finally {
+            thread.setContextClassLoader(previous);
+        }
+    }
+
+    @Override
     public void interceptAfterEachMethod(Invocation<Void> invocation, ReflectiveInvocationContext<Method> ic,
                                          ExtensionContext context) throws Throwable {
         redirect(invocation, ic, context);

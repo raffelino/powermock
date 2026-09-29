@@ -51,22 +51,27 @@ public class TestClassInClassLoader {
     }
 
     public void createShadowInstance(Object originalInstance, ExtensionContext context) throws Exception {
-        // ponytail: no-arg constructor only (no constructor parameter resolution), add when a test needs it
         Class<?> originalClass = originalInstance.getClass();
         Class<?> shadowClass = Class.forName(originalClass.getName(), false, classLoader);
-        final Object[] args;
-        final Constructor<?> constructor;
+        Object created;
         if (originalClass.getEnclosingClass() != null && !java.lang.reflect.Modifier.isStatic(originalClass.getModifiers())) {
             Object outer = enclosingInstance(originalInstance);
             Object outerShadow = getShadowInstance(outer, context);
-            constructor = shadowClass.getDeclaredConstructor(outerShadow.getClass());
-            args = new Object[]{outerShadow};
+            Constructor<?> constructor = shadowClass.getDeclaredConstructor(outerShadow.getClass());
+            constructor.setAccessible(true);
+            created = MockClassLoaderInvoker.withContextClassLoader(classLoader, () -> constructor.newInstance(outerShadow));
         } else {
-            constructor = shadowClass.getDeclaredConstructor();
-            args = new Object[0];
+            try {
+                Constructor<?> constructor = shadowClass.getDeclaredConstructor();
+                constructor.setAccessible(true);
+                created = MockClassLoaderInvoker.withContextClassLoader(classLoader, constructor::newInstance);
+            } catch (NoSuchMethodException e) {
+                // constructor injected by Jupiter: copy the original instance's state into the MockClassLoader
+                created = MockClassLoaderInvoker.withContextClassLoader(classLoader,
+                    () -> MockClassLoaderInvoker.convertArgument(originalInstance, classLoader));
+            }
         }
-        constructor.setAccessible(true);
-        Object shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, () -> constructor.newInstance(args));
+        final Object shadow = created;
         // Store keys use equals(); test classes don't override it, so this is identity.
         context.getStore(NAMESPACE).put(originalInstance, shadow);
         context.getRoot().getStore(NAMESPACE).put(originalInstance, shadow);
