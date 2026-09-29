@@ -28,6 +28,10 @@ final class ArgumentConverter {
         if (value == null) {
             return null;
         }
+        if (value instanceof String || value instanceof Number || value instanceof Boolean
+            || value instanceof Character) {
+            return value;
+        }
         if (value instanceof Class) {
             Class<?> c = (Class<?>) value;
             return c.isPrimitive() ? c : loadSame(classLoader, c);
@@ -51,7 +55,23 @@ final class ArgumentConverter {
             Class target = loadSame(classLoader, enumType);
             return target == enumType ? value : Enum.valueOf(target, ((Enum<?>) value).name());
         }
-        return value;
+        Class<?> target;
+        try {
+            target = loadSame(classLoader, type);
+        } catch (ClassNotFoundException e) {
+            return value;
+        }
+        if (target == type) {
+            return value;
+        }
+        // ponytail: shallow field-wise copy of user objects into the MockClassLoader, no identity/cycle tracking
+        Object copy = org.powermock.reflect.Whitebox.newInstance(target);
+        try {
+            copyFields(value, copy, classLoader, false);
+        } catch (Exception e) {
+            throw new IllegalStateException("Cannot convert " + value + " into the MockClassLoader", e);
+        }
+        return copy;
     }
 
     private static Class<?> loadSame(ClassLoader classLoader, Class<?> c) throws ClassNotFoundException {
