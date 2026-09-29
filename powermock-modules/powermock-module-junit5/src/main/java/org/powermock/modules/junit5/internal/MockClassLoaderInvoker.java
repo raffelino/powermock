@@ -25,9 +25,32 @@ public class MockClassLoaderInvoker {
         try {
             withContextClassLoader(loaded.getClassLoader(), () -> method.invoke(target, args));
         } catch (InvocationTargetException e) {
-            throw e.getCause();
+            throw translate(e.getCause(), loaded.getClassLoader(), ic.getExecutable().getDeclaringClass().getClassLoader());
         } finally {
             InstanceFieldSync.copy(target, original);
+        }
+    }
+
+    /** Re-creates an exception thrown by MockClassLoader-loaded code as the same type of the test's own loader. */
+    static Throwable translate(Throwable t, ClassLoader mockLoader, final ClassLoader target) {
+        if (t == null || t.getClass().getClassLoader() != mockLoader || target == null) {
+            return t;
+        }
+        try {
+            java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+            try (java.io.ObjectOutputStream out = new java.io.ObjectOutputStream(bytes)) {
+                out.writeObject(t);
+            }
+            try (java.io.ObjectInputStream in = new java.io.ObjectInputStream(new java.io.ByteArrayInputStream(bytes.toByteArray())) {
+                @Override
+                protected Class<?> resolveClass(java.io.ObjectStreamClass desc) throws java.io.IOException, ClassNotFoundException {
+                    return Class.forName(desc.getName(), false, target);
+                }
+            }) {
+                return (Throwable) in.readObject();
+            }
+        } catch (Exception e) {
+            return t;
         }
     }
 
