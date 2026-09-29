@@ -13,7 +13,7 @@ import java.util.concurrent.Callable;
  */
 public class MockClassLoaderInvoker {
 
-    public static void invoke(TestClassInClassLoader loaded, ReflectiveInvocationContext<Method> ic,
+    public static Object invoke(TestClassInClassLoader loaded, ReflectiveInvocationContext<Method> ic,
                               ExtensionContext context) throws Throwable {
         final Method method = findMethod(loaded.getClassLoader(), ic.getExecutable());
         final Object target = ic.getTarget().isPresent()
@@ -23,7 +23,7 @@ public class MockClassLoaderInvoker {
         final Object[] args = CrossLoaderConverter.convertAll(ic.getArguments().toArray(), loaded.getClassLoader(),
             loaded.knownShadows());
         try {
-            withContextClassLoader(loaded.getClassLoader(), () -> method.invoke(target, args));
+            return withContextClassLoader(loaded.getClassLoader(), () -> method.invoke(target, args));
         } catch (InvocationTargetException e) {
             // user exception types seen by Jupiter (handlers, watchers, assertThrows outside) are the outside ones
             Object converted = CrossLoaderConverter.convert(e.getCause(),

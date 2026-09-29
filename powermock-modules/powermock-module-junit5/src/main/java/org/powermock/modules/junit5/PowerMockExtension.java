@@ -2,6 +2,7 @@ package org.powermock.modules.junit5;
 
 import org.junit.jupiter.api.extension.AfterEachCallback;
 import org.junit.jupiter.api.extension.BeforeEachCallback;
+import org.junit.jupiter.api.extension.DynamicTestInvocationContext;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.extension.InvocationInterceptor;
 import org.junit.jupiter.api.extension.ReflectiveInvocationContext;
@@ -52,6 +53,36 @@ public class PowerMockExtension implements TestInstancePostProcessor, Invocation
     public void interceptTestTemplateMethod(Invocation<Void> invocation, ReflectiveInvocationContext<Method> ic,
                                             ExtensionContext context) throws Throwable {
         redirect(invocation, ic, context);
+    }
+
+    @Override
+    public <T> T interceptTestFactoryMethod(Invocation<T> invocation, ReflectiveInvocationContext<Method> ic,
+                                           ExtensionContext context) throws Throwable {
+        invocation.skip();
+        @SuppressWarnings("unchecked")
+        T result = (T) MockClassLoaderInvoker.invoke(TestClassInClassLoader.of(context), ic, context);
+        return result;
+    }
+
+    @Override
+    public void interceptDynamicTest(Invocation<Void> invocation, DynamicTestInvocationContext ic,
+                                     ExtensionContext context) throws Throwable {
+        // the executable was created by the shadow's test factory: run it in the MockClassLoader world
+        TestClassInClassLoader loaded = TestClassInClassLoader.of(context);
+        try {
+            MockClassLoaderInvoker.withContextClassLoader(loaded.getClassLoader(), () -> {
+                try {
+                    invocation.proceed();
+                } catch (Exception | Error e) {
+                    throw e;
+                } catch (Throwable t) {
+                    throw new java.lang.reflect.UndeclaredThrowableException(t);
+                }
+                return null;
+            });
+        } finally {
+            PowerMockStateCleaner.clear(loaded.getClassLoader());
+        }
     }
 
     @Override

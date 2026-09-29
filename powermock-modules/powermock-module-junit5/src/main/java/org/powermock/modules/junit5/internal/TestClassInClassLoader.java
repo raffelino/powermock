@@ -86,6 +86,9 @@ public class TestClassInClassLoader {
     }
 
     public static TestClassInClassLoader of(ExtensionContext context) {
+        while (!context.getTestClass().isPresent() && context.getParent().isPresent()) {
+            context = context.getParent().get(); // e.g. dynamic tests
+        }
         Class<?> originalTestClass = context.getRequiredTestClass();
         ExtensionContext classContext = context;
         while (!(classContext.getElement().isPresent() && classContext.getElement().get() == originalTestClass)
