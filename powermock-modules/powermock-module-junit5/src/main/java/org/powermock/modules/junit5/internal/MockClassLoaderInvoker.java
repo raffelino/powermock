@@ -19,7 +19,10 @@ public class MockClassLoaderInvoker {
         final Object target = ic.getTarget().isPresent()
             ? loaded.getShadowInstance(ic.getTarget().get(), context)
             : null;
-        final Object[] args = ic.getArguments().toArray();
+        final Object[] args = ArgumentConverter.convert(loaded.getClassLoader(), ic.getArguments().toArray());
+        if (target != null) {
+            ArgumentConverter.copyInjectedFields(ic.getTarget().get(), target, loaded.getClassLoader());
+        }
         try {
             withContextClassLoader(loaded.getClassLoader(), () -> method.invoke(target, args));
         } catch (InvocationTargetException e) {
