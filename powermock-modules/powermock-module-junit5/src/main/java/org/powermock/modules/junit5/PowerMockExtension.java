@@ -1,6 +1,7 @@
 package org.powermock.modules.junit5;
 
 import org.junit.jupiter.api.extension.AfterEachCallback;
+import org.junit.jupiter.api.extension.BeforeEachCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.extension.InvocationInterceptor;
 import org.junit.jupiter.api.extension.ReflectiveInvocationContext;
@@ -20,7 +21,7 @@ import java.lang.reflect.Method;
  * MockClassLoader. Every test and lifecycle method invocation is intercepted and redirected to the
  * corresponding method of the shadow instance (or shadow class for static methods).
  */
-public class PowerMockExtension implements TestInstancePostProcessor, InvocationInterceptor, AfterEachCallback {
+public class PowerMockExtension implements TestInstancePostProcessor, InvocationInterceptor, BeforeEachCallback, AfterEachCallback {
 
     @Override
     public void postProcessTestInstance(Object testInstance, ExtensionContext context) throws Exception {
@@ -61,6 +62,11 @@ public class PowerMockExtension implements TestInstancePostProcessor, Invocation
     public void interceptAfterAllMethod(Invocation<Void> invocation, ReflectiveInvocationContext<Method> ic,
                                         ExtensionContext context) throws Throwable {
         redirect(invocation, ic, context);
+    }
+
+    @Override
+    public void beforeEach(ExtensionContext context) throws Exception {
+        TestClassInClassLoader.of(context).injectEasyMockAnnotations(context.getRequiredTestInstance(), context);
     }
 
     @Override

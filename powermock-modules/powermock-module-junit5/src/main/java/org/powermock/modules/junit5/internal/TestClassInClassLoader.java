@@ -52,6 +52,71 @@ public class TestClassInClassLoader {
         Object shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, constructor::newInstance);
         // Store keys use equals(); test classes don't override it, so this is identity.
         context.getStore(NAMESPACE).put(originalInstance, shadow);
+        MockClassLoaderInvoker.withContextClassLoader(classLoader, () -> {
+            injectMockAnnotations(shadow);
+            return null;
+        });
+    }
+
+    /**
+     * Processes mock annotations (@Mock, @Spy, @Captor, @InjectMocks; EasyMock @Mock/@MockNice/@MockStrict)
+     * on the shadow instance, like the JUnit 4 runner does, using the AnnotationEnabler of whichever
+     * PowerMock API is on the class path, loaded by the MockClassLoader.
+     */
+    /**
+     * The Mockito and EasyMock APIs ship an AnnotationEnabler under the same class name, so with both on
+     * the class path only one of them is found above; EasyMock's annotations are therefore injected here.
+     */
+    @SuppressWarnings("unchecked")
+    public void injectEasyMockAnnotations(Object originalInstance, ExtensionContext context) throws Exception {
+        Object shadow = getShadowInstance(originalInstance, context);
+        MockClassLoaderInvoker.withContextClassLoader(classLoader, () -> {
+            injectEasyMockAnnotations(shadow);
+            return null;
+        });
+    }
+
+    private void injectEasyMockAnnotations(Object shadow) throws Exception {
+        Class<?> powerMock;
+        try {
+            powerMock = Class.forName("org.powermock.api.easymock.PowerMock", true, classLoader);
+        } catch (ClassNotFoundException e) {
+            return;
+        }
+        String[][] kinds = {
+            {"org.powermock.api.easymock.annotation.Mock", "createMock"},
+            {"org.powermock.api.easymock.annotation.MockNice", "createNiceMock"},
+            {"org.powermock.api.easymock.annotation.MockStrict", "createStrictMock"},
+        };
+        for (Class<?> c = shadow.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+            for (java.lang.reflect.Field field : c.getDeclaredFields()) {
+                for (String[] kind : kinds) {
+                    Class<? extends java.lang.annotation.Annotation> annotation =
+                        (Class<? extends java.lang.annotation.Annotation>) Class.forName(kind[0], true, classLoader);
+                    if (field.isAnnotationPresent(annotation) && !java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
+                        field.setAccessible(true);
+                        {
+                            // overwrite: the Mockito AnnotationEnabler may already have put a Mockito mock here
+                            Object mock = powerMock.getMethod(kind[1], Class.class)
+                                .invoke(null, field.getType());
+                            field.set(shadow, mock);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private void injectMockAnnotations(Object shadow) throws Exception {
+        Class<?> enablerClass;
+        try {
+            enablerClass = Class.forName("org.powermock.api.extension.listener.AnnotationEnabler", true, classLoader);
+        } catch (ClassNotFoundException e) {
+            return;
+        }
+        Object enabler = enablerClass.getDeclaredConstructor().newInstance();
+        enablerClass.getMethod("beforeTestMethod", Object.class, java.lang.reflect.Method.class, Object[].class)
+                .invoke(enabler, shadow, null, new Object[0]);
     }
 
     public Object getShadowInstance(Object originalInstance, ExtensionContext context) {
