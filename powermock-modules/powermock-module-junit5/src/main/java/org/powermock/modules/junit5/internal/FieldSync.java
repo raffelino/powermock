@@ -19,8 +19,8 @@ final class FieldSync {
         for (Class<?> c = original.getClass(), s = shadow.getClass(); c != null && s != null && c != Object.class;
              c = c.getSuperclass(), s = s.getSuperclass()) {
             for (Field field : c.getDeclaredFields()) {
-                if (skip(field)) {
-                    continue;
+                if (skip(field) || isMockAnnotated(field)) {
+                    continue; // owned by the annotation processing on the shadow
                 }
                 field.setAccessible(true);
                 Object value = field.get(original);
