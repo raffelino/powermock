@@ -59,6 +59,35 @@ public class MockClassLoaderInvoker {
             }
             return Enum.valueOf((Class) target, ((Enum<?>) arg).name());
         }
+        if (arg != null && arg.getClass().getClassLoader() != null && !arg.getClass().isArray()) {
+            Class<?> target;
+            try {
+                target = Class.forName(arg.getClass().getName(), false, classLoader);
+            } catch (ClassNotFoundException e) {
+                return arg;
+            }
+            if (target == arg.getClass()) {
+                return arg;
+            }
+            // copy a user-class object (e.g. from a Jupiter argument source) into the MockClassLoader
+            Object copy = org.powermock.reflect.Whitebox.newInstance(target);
+            for (Class<?> c = arg.getClass(), t = target; c != null && c != Object.class; c = c.getSuperclass(), t = t.getSuperclass()) {
+                for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                    if (java.lang.reflect.Modifier.isStatic(f.getModifiers())) {
+                        continue;
+                    }
+                    try {
+                        f.setAccessible(true);
+                        java.lang.reflect.Field tf = t.getDeclaredField(f.getName());
+                        tf.setAccessible(true);
+                        tf.set(copy, convertArgument(f.get(arg), classLoader));
+                    } catch (ReflectiveOperationException e) {
+                        return arg;
+                    }
+                }
+            }
+            return copy;
+        }
         return arg;
     }
 
