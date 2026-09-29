@@ -52,6 +52,15 @@ public class PowerMockExtension implements TestInstancePostProcessor, Invocation
     }
 
     @Override
+    public <T> T interceptTestFactoryMethod(Invocation<T> invocation, ReflectiveInvocationContext<Method> ic,
+                                            ExtensionContext context) throws Throwable {
+        invocation.skip();
+        @SuppressWarnings("unchecked")
+        T result = (T) MockClassLoaderInvoker.invokeWithResult(TestClassInClassLoader.of(context), ic, context);
+        return result;
+    }
+
+    @Override
     public void interceptAfterEachMethod(Invocation<Void> invocation, ReflectiveInvocationContext<Method> ic,
                                          ExtensionContext context) throws Throwable {
         redirect(invocation, ic, context);

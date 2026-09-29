@@ -15,16 +15,51 @@ public class MockClassLoaderInvoker {
 
     public static void invoke(TestClassInClassLoader loaded, ReflectiveInvocationContext<Method> ic,
                               ExtensionContext context) throws Throwable {
+        invokeWithResult(loaded, ic, context);
+    }
+
+    public static Object invokeWithResult(TestClassInClassLoader loaded, ReflectiveInvocationContext<Method> ic,
+                                          ExtensionContext context) throws Throwable {
         final Method method = findMethod(loaded.getClassLoader(), ic.getExecutable());
         final Object target = ic.getTarget().isPresent()
             ? loaded.getShadowInstance(ic.getTarget().get(), context)
             : null;
         final Object[] args = ic.getArguments().toArray();
+        for (int i = 0; i < args.length; i++) {
+            args[i] = convertArgument(args[i], loaded.getClassLoader());
+        }
         try {
-            withContextClassLoader(loaded.getClassLoader(), () -> method.invoke(target, args));
+            return withContextClassLoader(loaded.getClassLoader(), () -> method.invoke(target, args));
         } catch (InvocationTargetException e) {
             throw e.getCause();
         }
+    }
+
+    /**
+     * Translates arguments created in the system class loader (e.g. by Jupiter argument sources)
+     * into their counterparts in the MockClassLoader: enum constants and Class literals.
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    static Object convertArgument(Object arg, ClassLoader classLoader) throws ClassNotFoundException {
+        if (arg instanceof Class) {
+            Class<?> c = (Class<?>) arg;
+            if (c.isPrimitive() || c.isArray() || c.getClassLoader() == null) {
+                return c;
+            }
+            return Class.forName(c.getName(), false, classLoader);
+        }
+        if (arg instanceof Enum) {
+            Class<?> enumClass = ((Enum<?>) arg).getDeclaringClass();
+            if (enumClass.getClassLoader() == null) {
+                return arg;
+            }
+            Class<?> target = Class.forName(enumClass.getName(), false, classLoader);
+            if (target == enumClass) {
+                return arg;
+            }
+            return Enum.valueOf((Class) target, ((Enum<?>) arg).name());
+        }
+        return arg;
     }
 
     static Method findMethod(ClassLoader classLoader, Method original) throws ClassNotFoundException, NoSuchMethodException {
