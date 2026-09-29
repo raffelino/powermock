@@ -21,16 +21,61 @@ public class MockClassLoaderInvoker {
             : null;
         final Object[] args = ic.getArguments().toArray();
         Class<?>[] types = method.getParameterTypes();
-        CrossLoaderConverter converter = new CrossLoaderConverter(loaded.getClassLoader());
+        final CrossLoaderConverter converter = new CrossLoaderConverter(loaded.getClassLoader());
         for (int i = 0; i < args.length; i++) {
             if (args[i] != null && !types[i].isPrimitive()) {
                 args[i] = converter.convert(args[i]);
             }
         }
+        Object original = ic.getTarget().orElse(null);
+        if (original != null) {
+            syncFields(original, target, converter, true);
+        }
         try {
             withContextClassLoader(loaded.getClassLoader(), () -> method.invoke(target, args));
         } catch (InvocationTargetException e) {
             throw e.getCause();
+        } finally {
+            if (original != null) {
+                syncFields(target, original, null, false);
+            }
+        }
+    }
+
+    /**
+     * Mirrors instance state set by other extensions (@TempDir fields, custom callbacks) into the shadow,
+     * and shadow state back into Jupiter's instance where the value's type is visible there.
+     */
+    static void syncFields(Object from, Object to, CrossLoaderConverter converter, boolean onlyIntoNull) throws Exception {
+        Class<?> fromClass = from.getClass();
+        Class<?> toClass = to.getClass();
+        while (fromClass != null && fromClass != Object.class && toClass != null) {
+            for (java.lang.reflect.Field field : fromClass.getDeclaredFields()) {
+                int mod = field.getModifiers();
+                if (java.lang.reflect.Modifier.isStatic(mod) || field.isSynthetic() || field.getType().isPrimitive()) {
+                    continue;
+                }
+                java.lang.reflect.Field target;
+                try {
+                    target = toClass.getDeclaredField(field.getName());
+                } catch (NoSuchFieldException e) {
+                    continue;
+                }
+                field.setAccessible(true);
+                target.setAccessible(true);
+                Object value = field.get(from);
+                if (value == null || (onlyIntoNull && target.get(to) != null)) {
+                    continue;
+                }
+                if (converter != null) {
+                    value = converter.convert(value);
+                }
+                if (target.getType().isInstance(value) && !java.lang.reflect.Modifier.isFinal(mod)) {
+                    target.set(to, value);
+                }
+            }
+            fromClass = fromClass.getSuperclass();
+            toClass = toClass.getSuperclass();
         }
     }
 
