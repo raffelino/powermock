@@ -50,8 +50,29 @@ public class TestClassInClassLoader {
         Constructor<?> constructor = testClass.getDeclaredConstructor();
         constructor.setAccessible(true);
         Object shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, constructor::newInstance);
+        initMockitoAnnotations(shadow);
         // Store keys use equals(); test classes don't override it, so this is identity.
         context.getStore(NAMESPACE).put(originalInstance, shadow);
+    }
+
+    /** Processes @Mock/@Spy/@Captor/@InjectMocks on the shadow instance with the MockClassLoader's Mockito, like PowerMockRunner. */
+    private void initMockitoAnnotations(final Object shadow) throws Exception {
+        final Class<?> annotations;
+        try {
+            annotations = Class.forName("org.mockito.MockitoAnnotations", true, classLoader);
+        } catch (ClassNotFoundException e) {
+            return; // Mockito not on the test class path
+        }
+        try {
+            MockClassLoaderInvoker.withContextClassLoader(classLoader,
+                () -> annotations.getMethod("openMocks", Object.class).invoke(null, shadow));
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof Exception) {
+                throw (Exception) cause;
+            }
+            throw (Error) cause;
+        }
     }
 
     public Object getShadowInstance(Object originalInstance, ExtensionContext context) {
