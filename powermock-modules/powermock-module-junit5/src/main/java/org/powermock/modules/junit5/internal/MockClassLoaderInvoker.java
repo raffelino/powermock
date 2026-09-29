@@ -33,7 +33,7 @@ public class MockClassLoaderInvoker {
         try {
             return withContextClassLoader(loaded.getClassLoader(), () -> method.invoke(target, args));
         } catch (InvocationTargetException e) {
-            throw e.getCause();
+            throw translate(e.getCause(), ic.getExecutable().getDeclaringClass().getClassLoader());
         } finally {
             FieldSync.copy(target, original);
         }
@@ -93,6 +93,67 @@ public class MockClassLoaderInvoker {
             return copy;
         }
         return arg;
+    }
+
+    /**
+     * Translates an exception whose class was loaded by the MockClassLoader into the same exception type of the
+     * test's own class loader, so that Jupiter, extensions and watchers see the user's type. Keeps message,
+     * stack trace, cause and suppressed exceptions; returns the original if no translation is possible.
+     */
+    static Throwable translate(Throwable t, ClassLoader targetLoader) {
+        return translate(t, targetLoader, 0);
+    }
+
+    private static Throwable translate(Throwable t, ClassLoader targetLoader, int depth) {
+        if (t == null || targetLoader == null || depth > 10) {
+            return t;
+        }
+        Class<?> type = t.getClass();
+        Throwable result = t;
+        if (type.getClassLoader() != null && type.getClassLoader() != targetLoader) {
+            try {
+                Class<?> targetType = Class.forName(type.getName(), false, targetLoader);
+                if (targetType != type && Throwable.class.isAssignableFrom(targetType)) {
+                    result = instantiate(targetType, t.getMessage());
+                }
+            } catch (ClassNotFoundException | LinkageError ignored) {
+                // type not visible in the test's loader: keep the original
+            }
+        }
+        if (result == null) {
+            return t;
+        }
+        if (result != t) {
+            result.setStackTrace(t.getStackTrace());
+            Throwable cause = t.getCause();
+            if (cause != null && cause != t) {
+                try {
+                    result.initCause(translate(cause, targetLoader, depth + 1));
+                } catch (IllegalStateException | IllegalArgumentException ignored) {
+                    // cause already set by the constructor
+                }
+            }
+            for (Throwable suppressed : t.getSuppressed()) {
+                result.addSuppressed(translate(suppressed, targetLoader, depth + 1));
+            }
+        }
+        return result;
+    }
+
+    private static Throwable instantiate(Class<?> type, String message) {
+        try {
+            java.lang.reflect.Constructor<?> c = type.getDeclaredConstructor(String.class);
+            c.setAccessible(true);
+            return (Throwable) c.newInstance(message);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            try {
+                Throwable created = (Throwable) org.powermock.reflect.Whitebox.newInstance(type);
+                org.powermock.reflect.Whitebox.setInternalState(created, "detailMessage", message, Throwable.class);
+                return created;
+            } catch (RuntimeException e2) {
+                return null;
+            }
+        }
     }
 
     static Method findMethod(ClassLoader classLoader, Method original) throws ClassNotFoundException, NoSuchMethodException {
