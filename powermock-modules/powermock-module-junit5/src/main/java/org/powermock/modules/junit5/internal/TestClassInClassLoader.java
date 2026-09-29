@@ -33,6 +33,11 @@ public class TestClassInClassLoader {
 
     public static TestClassInClassLoader of(ExtensionContext context) {
         Class<?> originalTestClass = context.getRequiredTestClass();
+        // @Nested classes share the MockClassLoader of their outermost class, so that the nested
+        // shadow instance can be created with the outer shadow instance as enclosing instance.
+        while (originalTestClass.getEnclosingClass() != null && !java.lang.reflect.Modifier.isStatic(originalTestClass.getModifiers())) {
+            originalTestClass = originalTestClass.getEnclosingClass();
+        }
         return context.getStore(NAMESPACE).getOrComputeIfAbsent(
             originalTestClass, TestClassInClassLoader::new, TestClassInClassLoader.class);
     }
@@ -47,11 +52,24 @@ public class TestClassInClassLoader {
 
     public void createShadowInstance(Object originalInstance, ExtensionContext context) throws Exception {
         // ponytail: no-arg constructor only (no constructor parameter resolution), add when a test needs it
-        Constructor<?> constructor = testClass.getDeclaredConstructor();
+        Class<?> originalClass = originalInstance.getClass();
+        Class<?> shadowClass = Class.forName(originalClass.getName(), false, classLoader);
+        final Object[] args;
+        final Constructor<?> constructor;
+        if (originalClass.getEnclosingClass() != null && !java.lang.reflect.Modifier.isStatic(originalClass.getModifiers())) {
+            Object outer = enclosingInstance(originalInstance);
+            Object outerShadow = getShadowInstance(outer, context);
+            constructor = shadowClass.getDeclaredConstructor(outerShadow.getClass());
+            args = new Object[]{outerShadow};
+        } else {
+            constructor = shadowClass.getDeclaredConstructor();
+            args = new Object[0];
+        }
         constructor.setAccessible(true);
-        Object shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, constructor::newInstance);
+        Object shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, () -> constructor.newInstance(args));
         // Store keys use equals(); test classes don't override it, so this is identity.
         context.getStore(NAMESPACE).put(originalInstance, shadow);
+        context.getRoot().getStore(NAMESPACE).put(originalInstance, shadow);
         MockClassLoaderInvoker.withContextClassLoader(classLoader, () -> {
             injectMockAnnotations(shadow);
             return null;
@@ -119,8 +137,21 @@ public class TestClassInClassLoader {
                 .invoke(enabler, shadow, null, new Object[0]);
     }
 
+    private static Object enclosingInstance(Object inner) throws IllegalAccessException {
+        for (java.lang.reflect.Field field : inner.getClass().getDeclaredFields()) {
+            if (field.isSynthetic() && field.getName().startsWith("this$")) {
+                field.setAccessible(true);
+                return field.get(inner);
+            }
+        }
+        throw new IllegalStateException("No enclosing instance found for " + inner);
+    }
+
     public Object getShadowInstance(Object originalInstance, ExtensionContext context) {
         Object shadow = context.getStore(NAMESPACE).get(originalInstance);
+        if (shadow == null) {
+            shadow = context.getRoot().getStore(NAMESPACE).get(originalInstance);
+        }
         if (shadow == null) {
             throw new IllegalStateException("No MockClassLoader instance for " + originalInstance);
         }
