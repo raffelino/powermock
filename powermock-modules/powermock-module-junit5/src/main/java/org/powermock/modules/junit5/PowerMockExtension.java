@@ -1,10 +1,12 @@
 package org.powermock.modules.junit5;
 
 import org.junit.jupiter.api.extension.AfterEachCallback;
+import org.junit.jupiter.api.extension.BeforeEachCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.extension.InvocationInterceptor;
 import org.junit.jupiter.api.extension.ReflectiveInvocationContext;
 import org.junit.jupiter.api.extension.TestInstancePostProcessor;
+import org.powermock.modules.junit5.internal.MockAnnotationInjector;
 import org.powermock.modules.junit5.internal.MockClassLoaderInvoker;
 import org.powermock.modules.junit5.internal.PowerMockStateCleaner;
 import org.powermock.modules.junit5.internal.TestClassInClassLoader;
@@ -20,7 +22,8 @@ import java.lang.reflect.Method;
  * MockClassLoader. Every test and lifecycle method invocation is intercepted and redirected to the
  * corresponding method of the shadow instance (or shadow class for static methods).
  */
-public class PowerMockExtension implements TestInstancePostProcessor, InvocationInterceptor, AfterEachCallback {
+public class PowerMockExtension implements TestInstancePostProcessor, InvocationInterceptor, BeforeEachCallback,
+    AfterEachCallback {
 
     @Override
     public void postProcessTestInstance(Object testInstance, ExtensionContext context) throws Exception {
@@ -64,7 +67,19 @@ public class PowerMockExtension implements TestInstancePostProcessor, Invocation
     }
 
     @Override
-    public void afterEach(ExtensionContext context) {
+    public void beforeEach(ExtensionContext context) throws Exception {
+        TestClassInClassLoader loaded = TestClassInClassLoader.of(context);
+        for (Object instance : context.getRequiredTestInstances().getAllInstances()) {
+            MockAnnotationInjector.inject(loaded.getClassLoader(), loaded.getShadowInstance(instance, context));
+        }
+    }
+
+    @Override
+    public void afterEach(ExtensionContext context) throws Exception {
+        TestClassInClassLoader loaded = TestClassInClassLoader.of(context);
+        for (Object instance : context.getRequiredTestInstances().getAllInstances()) {
+            MockAnnotationInjector.clear(loaded.getClassLoader(), loaded.getShadowInstance(instance, context));
+        }
         PowerMockStateCleaner.clear(TestClassInClassLoader.of(context).getClassLoader());
     }
 
