@@ -30,8 +30,10 @@ public class TestClassInClassLoader {
     private static final ExtensionContext.Namespace NAMESPACE = ExtensionContext.Namespace.create(TestClassInClassLoader.class);
 
     private final ClassLoader classLoader;
+    private final Class<?> topLevelClass;
 
     private TestClassInClassLoader(Class<?> topLevelClass) {
+        this.topLevelClass = topLevelClass;
         List<Class<?>> classes = new ArrayList<Class<?>>();
         collect(topLevelClass, classes);
         Set<String> toModify = new LinkedHashSet<String>();
@@ -79,7 +81,13 @@ public class TestClassInClassLoader {
     }
 
     public static TestClassInClassLoader of(ExtensionContext context) {
-        Class<?> topLevelClass = context.getRequiredTestClass();
+        Class<?> topLevelClass = null;
+        for (ExtensionContext c = context; c != null && topLevelClass == null; c = c.getParent().orElse(null)) {
+            topLevelClass = c.getTestClass().orElse(null);
+        }
+        if (topLevelClass == null) {
+            topLevelClass = context.getRequiredTestClass();
+        }
         while (topLevelClass.getEnclosingClass() != null) {
             topLevelClass = topLevelClass.getEnclosingClass();
         }
@@ -100,7 +108,7 @@ public class TestClassInClassLoader {
     }
 
     public ClassLoader getOriginalClassLoader(ExtensionContext context) {
-        return context.getRequiredTestClass().getClassLoader();
+        return topLevelClass.getClassLoader();
     }
 
     public Class<?> loadInMockClassLoader(Class<?> type) {

@@ -1,5 +1,7 @@
 package org.powermock.modules.junit5.internal;
 
+import org.junit.jupiter.api.extension.RegisterExtension;
+
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
@@ -43,7 +45,20 @@ public final class ShadowInstance {
             originalType = originalType.getSuperclass();
             shadowType = shadowType.getSuperclass();
         }
+        shareRegisteredExtensions();
         markSynchronised();
+    }
+
+    /**
+     * @RegisterExtension field types are not reloaded by the MockClassLoader: the shadow uses the very
+     * extension object Jupiter calls.
+     */
+    private void shareRegisteredExtensions() {
+        for (Field[] pair : fields) {
+            if (pair[0].isAnnotationPresent(RegisterExtension.class)) {
+                set(pair[1], shadow, get(pair[0], original));
+            }
+        }
     }
 
     public Object getOriginal() {

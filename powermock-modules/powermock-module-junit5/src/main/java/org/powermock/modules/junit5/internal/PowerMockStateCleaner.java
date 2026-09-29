@@ -1,6 +1,8 @@
 package org.powermock.modules.junit5.internal;
 
+import org.powermock.core.ListMap;
 import org.powermock.core.MockRepository;
+import org.powermock.reflect.Whitebox;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
@@ -51,7 +53,7 @@ public class PowerMockStateCleaner {
                 Object value = read(field);
                 if (value instanceof Map) {
                     List<Object[]> entries = new ArrayList<Object[]>();
-                    for (Map.Entry<?, ?> entry : ((Map<?, ?>) value).entrySet()) {
+                    for (Map.Entry<?, ?> entry : entries((Map<?, ?>) value)) {
                         entries.add(new Object[]{entry.getKey(), entry.getValue()});
                     }
                     snapshot.contents.put(field, entries);
@@ -74,6 +76,15 @@ public class PowerMockStateCleaner {
                     ((Collection<Object>) current).addAll((List<Object>) entry.getValue());
                 }
             }
+        }
+
+        /** PowerMock's ListMap (identity-based instance mocks) does not support entrySet(). */
+        @SuppressWarnings("unchecked")
+        private static Collection<Map.Entry<?, ?>> entries(Map<?, ?> map) {
+            if (map instanceof ListMap) {
+                return new ArrayList<Map.Entry<?, ?>>((List<Map.Entry<?, ?>>) Whitebox.getInternalState(map, "entries"));
+            }
+            return new ArrayList<Map.Entry<?, ?>>(map.entrySet());
         }
 
         private static Object read(Field field) {
