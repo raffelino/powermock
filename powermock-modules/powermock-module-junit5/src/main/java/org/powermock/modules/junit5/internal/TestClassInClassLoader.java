@@ -1,64 +1,135 @@
 package org.powermock.modules.junit5.internal;
 
 import org.junit.jupiter.api.extension.ExtensionContext;
-import org.powermock.core.classloader.MockClassLoaderFactory;
+import org.powermock.core.classloader.ByteCodeFramework;
+import org.powermock.core.classloader.MockClassLoader;
+import org.powermock.core.classloader.MockClassLoaderBuilder;
+import org.powermock.core.classloader.annotations.PrepareEverythingForTest;
+import org.powermock.core.classloader.annotations.UseClassPathAdjuster;
 import org.powermock.tests.utils.impl.MockPolicyInitializerImpl;
 import org.powermock.tests.utils.impl.PowerMockIgnorePackagesExtractorImpl;
+import org.powermock.tests.utils.impl.PrepareForTestExtractorImpl;
+import org.powermock.tests.utils.impl.StaticConstructorSuppressExtractorImpl;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Executable;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
- * One MockClassLoader per test class (built from @PrepareForTest, @PowerMockIgnore,
- * @SuppressStaticInitializationFor, mock policies ... exactly as the TestNG module does), the test
- * class loaded by it, and the shadow instances mirroring Jupiter's test instances.
- * Cached in the test class's ExtensionContext store, so it lives as long as the test class runs.
+ * One MockClassLoader per top-level test class, shared by all its {@code @Nested} classes (built from the
+ * union of their @PrepareForTest, @PowerMockIgnore, @SuppressStaticInitializationFor), and the "shadow"
+ * instances in that class loader that mirror Jupiter's test instances.
+ * Cached in the top-level class's ExtensionContext store, so it lives as long as the test class runs.
  */
 public class TestClassInClassLoader {
 
     private static final ExtensionContext.Namespace NAMESPACE = ExtensionContext.Namespace.create(TestClassInClassLoader.class);
 
     private final ClassLoader classLoader;
-    private final Class<?> testClass;
+    private final ObjectTransfer transfer;
+    // ponytail: shadows of PER_METHOD instances are kept until the top-level class finishes; fine for test-sized classes
+    private final Map<Object, ShadowState> shadows = Collections.synchronizedMap(new IdentityHashMap<Object, ShadowState>());
 
-    private TestClassInClassLoader(Class<?> originalTestClass) {
-        String[] packagesToIgnore = new PowerMockIgnorePackagesExtractorImpl().getPackagesToIgnore(originalTestClass);
-        this.classLoader = new MockClassLoaderFactory(originalTestClass, packagesToIgnore).createForClass(null);
-        new MockPolicyInitializerImpl(originalTestClass).initialize(classLoader);
-        try {
-            this.testClass = Class.forName(originalTestClass.getName(), false, classLoader);
-        } catch (ClassNotFoundException e) {
-            throw new IllegalStateException("Cannot load " + originalTestClass + " in PowerMock's MockClassLoader", e);
+    private TestClassInClassLoader(Class<?> topLevelClass) {
+        List<Class<?>> classes = new ArrayList<Class<?>>();
+        collectNestedClasses(topLevelClass, classes);
+        this.classLoader = createMockClassLoader(topLevelClass, classes);
+        new MockPolicyInitializerImpl(topLevelClass).initialize(classLoader);
+        this.transfer = new ObjectTransfer(classLoader, shadows);
+    }
+
+    private static void collectNestedClasses(Class<?> type, List<Class<?>> result) {
+        result.add(type);
+        for (Class<?> member : type.getDeclaredClasses()) {
+            collectNestedClasses(member, result);
+        }
+    }
+
+    private static ClassLoader createMockClassLoader(Class<?> topLevelClass, List<Class<?>> classes) {
+        Set<String> toModify = new LinkedHashSet<String>();
+        Set<String> ignore = new LinkedHashSet<String>();
+        boolean everything = false;
+        for (Class<?> type : classes) {
+            toModify.add(type.getName());
+            everything |= type.isAnnotationPresent(PrepareEverythingForTest.class);
+            addAll(toModify, new PrepareForTestExtractorImpl().getTestClasses(type));
+            addAll(toModify, new StaticConstructorSuppressExtractorImpl().getTestClasses(type));
+            addAll(ignore, new PowerMockIgnorePackagesExtractorImpl().getPackagesToIgnore(type));
+        }
+        if (everything) {
+            toModify.clear();
+            toModify.add(MockClassLoader.MODIFY_ALL_CLASSES);
+        }
+        return MockClassLoaderBuilder.create(ByteCodeFramework.getByteCodeFrameworkForTestClass(topLevelClass))
+            .forTestClass(topLevelClass)
+            .addIgnorePackage(ignore.toArray(new String[0]))
+            .addClassesToModify(toModify.toArray(new String[0]))
+            .addClassPathAdjuster(topLevelClass.getAnnotation(UseClassPathAdjuster.class))
+            .build();
+    }
+
+    private static void addAll(Set<String> target, String[] values) {
+        if (values != null) {
+            target.addAll(Arrays.asList(values));
         }
     }
 
     public static TestClassInClassLoader of(ExtensionContext context) {
-        Class<?> originalTestClass = context.getRequiredTestClass();
-        return context.getStore(NAMESPACE).getOrComputeIfAbsent(
-            originalTestClass, TestClassInClassLoader::new, TestClassInClassLoader.class);
+        Class<?> topLevelClass = context.getRequiredTestClass();
+        while (topLevelClass.getEnclosingClass() != null) {
+            topLevelClass = topLevelClass.getEnclosingClass();
+        }
+        ExtensionContext topLevelContext = context;
+        while (topLevelContext.getParent().isPresent() && topLevelContext.getParent().get().getTestClass().isPresent()) {
+            topLevelContext = topLevelContext.getParent().get();
+        }
+        return topLevelContext.getStore(NAMESPACE).getOrComputeIfAbsent(
+            topLevelClass, TestClassInClassLoader::new, TestClassInClassLoader.class);
     }
 
     public ClassLoader getClassLoader() {
         return classLoader;
     }
 
-    public Class<?> getTestClass() {
-        return testClass;
+    public ObjectTransfer getTransfer() {
+        return transfer;
     }
 
-    public void createShadowInstance(Object originalInstance, ExtensionContext context) throws Exception {
-        // ponytail: no-arg constructor only (no constructor parameter resolution), add when a test needs it
-        Constructor<?> constructor = testClass.getDeclaredConstructor();
-        constructor.setAccessible(true);
-        Object shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, constructor::newInstance);
-        // Store keys use equals(); test classes don't override it, so this is identity.
-        context.getStore(NAMESPACE).put(originalInstance, shadow);
+    /** Creates the shadow of a test instance Jupiter just constructed, with the same (transferred) constructor arguments. */
+    public void createShadowInstance(Object originalInstance, Constructor<?> originalConstructor, List<Object> arguments) throws Exception {
+        final Constructor<?> constructor = (Constructor<?>) findExecutable(originalConstructor);
+        final Object[] args = transfer.toMockClassLoader(arguments, constructor.getParameterTypes());
+        Object shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, () -> constructor.newInstance(args));
+        shadows.put(originalInstance, new ShadowState(originalInstance, shadow));
     }
 
-    public Object getShadowInstance(Object originalInstance, ExtensionContext context) {
-        Object shadow = context.getStore(NAMESPACE).get(originalInstance);
+    public ShadowState getShadow(Object originalInstance) {
+        ShadowState shadow = shadows.get(originalInstance);
         if (shadow == null) {
             throw new IllegalStateException("No MockClassLoader instance for " + originalInstance);
         }
         return shadow;
+    }
+
+    public Executable findExecutable(Executable original) throws ClassNotFoundException, NoSuchMethodException {
+        Class<?> declaringClass = Class.forName(original.getDeclaringClass().getName(), false, classLoader);
+        Class<?>[] originalTypes = original.getParameterTypes();
+        Class<?>[] types = new Class<?>[originalTypes.length];
+        for (int i = 0; i < types.length; i++) {
+            types[i] = originalTypes[i].isPrimitive() ? originalTypes[i]
+                : Class.forName(originalTypes[i].getName(), false, classLoader);
+        }
+        Executable executable = original instanceof Constructor
+            ? declaringClass.getDeclaredConstructor(types)
+            : declaringClass.getDeclaredMethod(original.getName(), types);
+        executable.setAccessible(true);
+        return executable;
     }
 }
