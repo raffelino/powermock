@@ -27,6 +27,8 @@ public class MockAnnotationInjector {
                     Object instance = support.getConstructor(Object.class).newInstance(shadowInstance);
                     invoke(support.getMethod("injectMocks"), instance);
                 }
+                // an EasyMock test: Mockito's enabler would mock the same fields with the wrong API
+                return null;
             }
             Class<?> enablerClass = load(classLoader, MOCKITO_ENABLER);
             if (enablerClass != null && hasMethod(enablerClass, "injectCaptor")) {
