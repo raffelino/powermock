@@ -1,6 +1,7 @@
 package org.powermock.modules.junit5;
 
 import org.junit.jupiter.api.extension.AfterEachCallback;
+import org.junit.jupiter.api.extension.BeforeEachCallback;
 import org.junit.jupiter.api.extension.DynamicTestInvocationContext;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.extension.InvocationInterceptor;
@@ -21,7 +22,17 @@ import java.lang.reflect.Method;
  * MockClassLoader. Every test and lifecycle method invocation is intercepted and redirected to the
  * corresponding method of the shadow instance (or shadow class for static methods).
  */
-public class PowerMockExtension implements TestInstancePostProcessor, InvocationInterceptor, AfterEachCallback {
+public class PowerMockExtension implements TestInstancePostProcessor, InvocationInterceptor, BeforeEachCallback, AfterEachCallback {
+
+    @Override
+    public void beforeEach(ExtensionContext context) {
+        // fields injected by Jupiter after instance post-processing (e.g. @TempDir) are mirrored to the shadow
+        TestClassInClassLoader loaded = TestClassInClassLoader.of(context);
+        for (Object instance : context.getRequiredTestInstances().getAllInstances()) {
+            org.powermock.modules.junit5.internal.ClassLoaderBridge.copyAnnotatedFields(
+                instance, loaded.getShadowInstance(instance, context), loaded.getClassLoader());
+        }
+    }
 
     @Override
     public void postProcessTestInstance(Object testInstance, ExtensionContext context) throws Exception {

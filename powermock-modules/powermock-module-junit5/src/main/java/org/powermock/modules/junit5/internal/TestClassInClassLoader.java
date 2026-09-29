@@ -32,6 +32,9 @@ public class TestClassInClassLoader {
     }
 
     public static TestClassInClassLoader of(ExtensionContext context) {
+        while (!context.getTestClass().isPresent() && context.getParent().isPresent()) {
+            context = context.getParent().get(); // e.g. dynamic tests
+        }
         Class<?> originalTestClass = context.getRequiredTestClass();
         return context.getStore(NAMESPACE).getOrComputeIfAbsent(
             originalTestClass, TestClassInClassLoader::new, TestClassInClassLoader.class);
