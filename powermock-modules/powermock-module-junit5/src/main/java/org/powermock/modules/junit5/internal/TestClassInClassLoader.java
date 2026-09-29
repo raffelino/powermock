@@ -46,10 +46,16 @@ public class TestClassInClassLoader {
     }
 
     public void createShadowInstance(Object originalInstance, ExtensionContext context) throws Exception {
-        // ponytail: no-arg constructor only (no constructor parameter resolution), add when a test needs it
-        Constructor<?> constructor = testClass.getDeclaredConstructor();
-        constructor.setAccessible(true);
-        Object shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, constructor::newInstance);
+        Object shadow;
+        try {
+            Constructor<?> constructor = testClass.getDeclaredConstructor();
+            constructor.setAccessible(true);
+            shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, constructor::newInstance);
+        } catch (NoSuchMethodException e) {
+            // constructor injected by Jupiter: copy the original instance's state into the MockClassLoader
+            shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader,
+                () -> MockClassLoaderInvoker.convertArgument(originalInstance, classLoader));
+        }
         // Store keys use equals(); test classes don't override it, so this is identity.
         context.getStore(NAMESPACE).put(originalInstance, shadow);
     }
