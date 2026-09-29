@@ -21,9 +21,15 @@ public class TestClassInClassLoader {
     private final Class<?> testClass;
 
     private TestClassInClassLoader(Class<?> originalTestClass) {
-        String[] packagesToIgnore = new PowerMockIgnorePackagesExtractorImpl().getPackagesToIgnore(originalTestClass);
-        this.classLoader = new MockClassLoaderFactory(originalTestClass, packagesToIgnore).createForClass(null);
-        new MockPolicyInitializerImpl(originalTestClass).initialize(classLoader);
+        // @Nested: configuration (e.g. @PrepareForTest) comes from the outermost class.
+        // ponytail: nested classes' own @PrepareForTest are not merged yet
+        Class<?> configClass = originalTestClass;
+        while (configClass.getEnclosingClass() != null && enclosingInstanceField(configClass) != null) {
+            configClass = configClass.getEnclosingClass();
+        }
+        String[] packagesToIgnore = new PowerMockIgnorePackagesExtractorImpl().getPackagesToIgnore(configClass);
+        this.classLoader = new MockClassLoaderFactory(configClass, packagesToIgnore).createForClass(null);
+        new MockPolicyInitializerImpl(configClass).initialize(classLoader);
         try {
             this.testClass = Class.forName(originalTestClass.getName(), false, classLoader);
         } catch (ClassNotFoundException e) {
@@ -46,12 +52,44 @@ public class TestClassInClassLoader {
     }
 
     public void createShadowInstance(Object originalInstance, ExtensionContext context) throws Exception {
-        // ponytail: no-arg constructor only (no constructor parameter resolution), add when a test needs it
-        Constructor<?> constructor = testClass.getDeclaredConstructor();
-        constructor.setAccessible(true);
-        Object shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, constructor::newInstance);
+        createShadow(originalInstance, context);
+    }
+
+    /**
+     * Creates the shadow of {@code originalInstance} in this class loader. For a @Nested (inner) class the
+     * enclosing instances are shadowed in the same class loader first, so the whole chain shares one loader.
+     */
+    private Object createShadow(Object originalInstance, ExtensionContext context) throws Exception {
+        Class<?> originalClass = originalInstance.getClass();
+        final Class<?> shadowClass = Class.forName(originalClass.getName(), false, classLoader);
+        Object shadow;
+        java.lang.reflect.Field outerField = enclosingInstanceField(originalClass);
+        if (outerField == null) {
+            final Constructor<?> constructor = shadowClass.getDeclaredConstructor();
+            constructor.setAccessible(true);
+            shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, constructor::newInstance);
+        } else {
+            outerField.setAccessible(true);
+            final Object outerShadow = createShadow(outerField.get(originalInstance), context);
+            final Constructor<?> constructor = shadowClass.getDeclaredConstructor(outerShadow.getClass());
+            constructor.setAccessible(true);
+            shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, () -> constructor.newInstance(outerShadow));
+        }
         // Store keys use equals(); test classes don't override it, so this is identity.
         context.getStore(NAMESPACE).put(originalInstance, shadow);
+        return shadow;
+    }
+
+    private static java.lang.reflect.Field enclosingInstanceField(Class<?> clazz) {
+        if (clazz.getEnclosingClass() == null || java.lang.reflect.Modifier.isStatic(clazz.getModifiers())) {
+            return null;
+        }
+        for (java.lang.reflect.Field f : clazz.getDeclaredFields()) {
+            if (f.isSynthetic() && f.getType() == clazz.getEnclosingClass()) {
+                return f;
+            }
+        }
+        return null;
     }
 
     public Object getShadowInstance(Object originalInstance, ExtensionContext context) {
