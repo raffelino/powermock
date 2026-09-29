@@ -25,12 +25,99 @@ public class MockClassLoaderInvoker {
         if (target != null) {
             ArgumentConverter.copyInjectedFields(original, target, loaded.getClassLoader());
         }
+        syncRegisteredExtensions(original, target);
         try {
             return withContextClassLoader(loaded.getClassLoader(), () -> method.invoke(target, args));
         } catch (InvocationTargetException e) {
-            throw e.getCause();
+            throw toTestClassLoader(e.getCause(), original != null ? original.getClass().getClassLoader()
+                : ic.getExecutable().getDeclaringClass().getClassLoader());
         } finally {
             InstanceFieldSync.copyWithEnclosing(target, original);
+            syncRegisteredExtensions(target, original);
+        }
+    }
+
+    /**
+     * Re-creates a throwable thrown by MockClassLoader-loaded code with the classes of the given (Jupiter side)
+     * class loader, so that user exception types are seen as themselves by handlers, watchers and the engine.
+     * Falls back to the original throwable if it cannot be converted.
+     */
+    static Throwable toTestClassLoader(Throwable t, final ClassLoader target) {
+        if (t == null || target == null || t.getClass().getClassLoader() == target
+            || t.getClass().getClassLoader() == null) {
+            return t;
+        }
+        try {
+            java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+            java.io.ObjectOutputStream out = new java.io.ObjectOutputStream(bytes);
+            out.writeObject(t);
+            out.close();
+            java.io.ObjectInputStream in = new java.io.ObjectInputStream(
+                new java.io.ByteArrayInputStream(bytes.toByteArray())) {
+                @Override
+                protected Class<?> resolveClass(java.io.ObjectStreamClass desc)
+                    throws java.io.IOException, ClassNotFoundException {
+                    try {
+                        return Class.forName(desc.getName(), false, target);
+                    } catch (ClassNotFoundException e) {
+                        return super.resolveClass(desc);
+                    }
+                }
+            };
+            Object converted = in.readObject();
+            return converted instanceof Throwable ? (Throwable) converted : t;
+        } catch (Exception | LinkageError e) {
+            return t;
+        }
+    }
+
+    /**
+     * Copies the state of @RegisterExtension instance fields' objects between Jupiter's instance and the shadow
+     * (the two extension objects are of the same class loaded by different class loaders).
+     */
+    @SuppressWarnings("unchecked")
+    private static void syncRegisteredExtensions(Object from, Object to) {
+        if (from == null || to == null || from == to) {
+            return;
+        }
+        for (Class<?> c = from.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+            for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                if (java.lang.reflect.Modifier.isStatic(f.getModifiers())
+                    || !f.isAnnotationPresent(org.junit.jupiter.api.extension.RegisterExtension.class)) {
+                    continue;
+                }
+                try {
+                    java.lang.reflect.Field g = Class.forName(c.getName(), false, to.getClass().getClassLoader())
+                        .getDeclaredField(f.getName());
+                    f.setAccessible(true);
+                    g.setAccessible(true);
+                    Object src = f.get(from);
+                    Object dst = g.get(to);
+                    if (src == null || dst == null || src == dst) {
+                        continue;
+                    }
+                    for (java.lang.reflect.Field sf : src.getClass().getDeclaredFields()) {
+                        if (java.lang.reflect.Modifier.isStatic(sf.getModifiers())) {
+                            continue;
+                        }
+                        java.lang.reflect.Field df = dst.getClass().getDeclaredField(sf.getName());
+                        sf.setAccessible(true);
+                        df.setAccessible(true);
+                        Object v = sf.get(src);
+                        Object current = df.get(dst);
+                        if (v instanceof java.util.Collection && current instanceof java.util.Collection) {
+                            java.util.Collection<Object> target = (java.util.Collection<Object>) current;
+                            target.clear();
+                            target.addAll((java.util.Collection<Object>) v);
+                        } else if (!java.lang.reflect.Modifier.isFinal(df.getModifiers())
+                            && (df.getType().isPrimitive() || v == null || df.getType().isInstance(v))) {
+                            df.set(dst, v);
+                        }
+                    }
+                } catch (Exception e) {
+                    // leave the extension object as it is
+                }
+            }
         }
     }
 
