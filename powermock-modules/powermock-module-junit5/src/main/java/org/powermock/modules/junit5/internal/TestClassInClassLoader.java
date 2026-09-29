@@ -32,6 +32,9 @@ public class TestClassInClassLoader {
     }
 
     public static TestClassInClassLoader of(ExtensionContext context) {
+        while (!context.getTestClass().isPresent() && context.getParent().isPresent()) {
+            context = context.getParent().get(); // e.g. dynamic tests
+        }
         Class<?> originalTestClass = context.getRequiredTestClass();
         // @Nested classes share the MockClassLoader of their outermost (top-level) test class
         while (originalTestClass.getEnclosingClass() != null && !java.lang.reflect.Modifier.isStatic(originalTestClass.getModifiers())) {
@@ -77,13 +80,29 @@ public class TestClassInClassLoader {
     }
 
     private Object newShadow(Object originalInstance, Object outerShadow, ExtensionContext context) throws Exception {
-        Class<?> shadowClass = Class.forName(originalInstance.getClass().getName(), false, classLoader);
-        final Constructor<?> constructor = outerShadow == null
-            ? shadowClass.getDeclaredConstructor()
-            : shadowClass.getDeclaredConstructor(outerShadow.getClass());
-        constructor.setAccessible(true);
-        final Object[] args = outerShadow == null ? new Object[0] : new Object[]{outerShadow};
-        Object shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, () -> constructor.newInstance(args));
+        final Class<?> shadowClass = Class.forName(originalInstance.getClass().getName(), false, classLoader);
+        Constructor<?> constructor;
+        try {
+            constructor = outerShadow == null
+                ? shadowClass.getDeclaredConstructor()
+                : shadowClass.getDeclaredConstructor(outerShadow.getClass());
+        } catch (NoSuchMethodException e) {
+            constructor = null;
+        }
+        Object shadow;
+        if (constructor != null) {
+            constructor.setAccessible(true);
+            final Constructor<?> ctor = constructor;
+            final Object[] args = outerShadow == null ? new Object[0] : new Object[]{outerShadow};
+            shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, () -> ctor.newInstance(args));
+            // fields set by Jupiter extensions before us (e.g. @TempDir) are mirrored
+            ClassLoaderBridge.copyAnnotatedFields(originalInstance, shadow, classLoader);
+        } else {
+            // constructor parameters were resolved by Jupiter for the original instance: mirror its state
+            shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader,
+                () -> ClassLoaderBridge.allocate(shadowClass));
+            ClassLoaderBridge.copyFields(originalInstance, shadow, classLoader);
+        }
         AnnotationInjector.inject(classLoader, shadow);
         // Store keys use equals(); test classes don't override it, so this is identity.
         context.getStore(NAMESPACE).put(originalInstance, shadow);

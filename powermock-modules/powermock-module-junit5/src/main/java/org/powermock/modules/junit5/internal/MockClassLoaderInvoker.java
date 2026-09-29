@@ -13,15 +13,18 @@ import java.util.concurrent.Callable;
  */
 public class MockClassLoaderInvoker {
 
-    public static void invoke(TestClassInClassLoader loaded, ReflectiveInvocationContext<Method> ic,
+    public static Object invoke(TestClassInClassLoader loaded, ReflectiveInvocationContext<Method> ic,
                               ExtensionContext context) throws Throwable {
         final Method method = findMethod(loaded.getClassLoader(), ic.getExecutable());
         final Object target = ic.getTarget().isPresent()
             ? loaded.getShadowInstance(ic.getTarget().get(), context)
             : null;
         final Object[] args = ic.getArguments().toArray();
+        for (int i = 0; i < args.length; i++) {
+            args[i] = ClassLoaderBridge.convert(args[i], loaded.getClassLoader());
+        }
         try {
-            withContextClassLoader(loaded.getClassLoader(), () -> method.invoke(target, args));
+            return withContextClassLoader(loaded.getClassLoader(), () -> method.invoke(target, args));
         } catch (InvocationTargetException e) {
             throw e.getCause();
         }
