@@ -44,6 +44,8 @@ public class TestClassInClassLoader {
     private final ClassLoader classLoader;
     private final Class<?> testClass;
     private final Map<Object, Object> shadows = Collections.synchronizedMap(new IdentityHashMap<Object, Object>());
+    /** Objects referenced by original instances' fields and their converted copies used by the shadows. */
+    private final Map<Object, Object> copies = new IdentityHashMap<Object, Object>();
     private final Map<Object, Map<Field, Object>> snapshots = new IdentityHashMap<Object, Map<Field, Object>>();
 
     private TestClassInClassLoader(Class<?> originalTestClass) {
@@ -97,6 +99,17 @@ public class TestClassInClassLoader {
         }
         return classContext.getStore(NAMESPACE).getOrComputeIfAbsent(
             originalTestClass, TestClassInClassLoader::new, TestClassInClassLoader.class);
+    }
+
+    private volatile Map<String, Object> beforeAllState;
+
+    /** Remembers the PowerMock state created by {@code @BeforeAll} methods, restored after every per-test clear. */
+    public void captureBeforeAllState() {
+        beforeAllState = PowerMockStateCleaner.snapshot(classLoader);
+    }
+
+    public Map<String, Object> getBeforeAllState() {
+        return beforeAllState;
     }
 
     public ClassLoader getClassLoader() {
@@ -181,6 +194,15 @@ public class TestClassInClassLoader {
         for (Map.Entry<Object, Object> e : known.entrySet()) {
             syncToShadow(e.getKey(), e.getValue(), known);
         }
+        Map<Object, Object> pairs;
+        synchronized (copies) {
+            pairs = new IdentityHashMap<Object, Object>(copies);
+        }
+        known.putAll(pairs);
+        for (Map.Entry<Object, Object> e : pairs.entrySet()) {
+            // e.g. a @RegisterExtension object whose state the extension changed on the original
+            CrossLoaderConverter.copyInto(e.getKey(), e.getValue(), classLoader, known);
+        }
     }
 
     private void syncToShadow(Object original, Object shadow, Map<Object, Object> known) {
@@ -199,6 +221,12 @@ public class TestClassInClassLoader {
                     Field target = shadow.getClass().getDeclaredField(field.getName());
                     target.setAccessible(true);
                     Object converted = CrossLoaderConverter.convert(value, classLoader, known);
+                    if (value != null && converted != null && converted.getClass() != value.getClass()
+                        && !(value instanceof Class) && !(value instanceof Enum) && !value.getClass().isArray()) {
+                        synchronized (copies) {
+                            copies.put(value, converted);
+                        }
+                    }
                     if (field.getType().isPrimitive() || converted == null || target.getType().isInstance(converted)) {
                         if (!(converted == null && snapshotMissingOrNullOnShadow(target, shadow))) {
                             target.set(shadow, converted);
@@ -218,6 +246,20 @@ public class TestClassInClassLoader {
 
     /** Copies values the test code set on the shadows back to the originals, where the value fits both worlds. */
     public void syncFromShadows() {
+        Map<Object, Object> reverse = new IdentityHashMap<Object, Object>();
+        for (Map.Entry<Object, Object> e : knownShadows().entrySet()) {
+            reverse.put(e.getValue(), e.getKey());
+        }
+        Map<Object, Object> pairs;
+        synchronized (copies) {
+            pairs = new IdentityHashMap<Object, Object>(copies);
+        }
+        for (Map.Entry<Object, Object> e : pairs.entrySet()) {
+            reverse.put(e.getValue(), e.getKey());
+        }
+        for (Map.Entry<Object, Object> e : pairs.entrySet()) {
+            CrossLoaderConverter.copyInto(e.getValue(), e.getKey(), e.getKey().getClass().getClassLoader(), reverse);
+        }
         for (Map.Entry<Object, Object> e : knownShadows().entrySet()) {
             Object original = e.getKey();
             Object shadow = e.getValue();

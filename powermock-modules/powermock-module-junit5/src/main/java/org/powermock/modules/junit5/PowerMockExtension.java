@@ -35,6 +35,7 @@ public class PowerMockExtension implements TestInstancePostProcessor, Invocation
     public void interceptBeforeAllMethod(Invocation<Void> invocation, ReflectiveInvocationContext<Method> ic,
                                          ExtensionContext context) throws Throwable {
         redirect(invocation, ic, context);
+        TestClassInClassLoader.of(context).captureBeforeAllState();
     }
 
     @Override
@@ -81,7 +82,7 @@ public class PowerMockExtension implements TestInstancePostProcessor, Invocation
                 return null;
             });
         } finally {
-            PowerMockStateCleaner.clear(loaded.getClassLoader());
+            PowerMockStateCleaner.clear(loaded.getClassLoader(), loaded.getBeforeAllState());
         }
     }
 
@@ -111,7 +112,7 @@ public class PowerMockExtension implements TestInstancePostProcessor, Invocation
         for (Object instance : context.getRequiredTestInstances().getAllInstances()) {
             MockAnnotationInjector.clear(loaded.getClassLoader(), loaded.getShadowInstance(instance, context));
         }
-        PowerMockStateCleaner.clear(TestClassInClassLoader.of(context).getClassLoader());
+        PowerMockStateCleaner.clear(loaded.getClassLoader(), loaded.getBeforeAllState());
     }
 
     private static void redirect(Invocation<Void> invocation, ReflectiveInvocationContext<Method> ic,

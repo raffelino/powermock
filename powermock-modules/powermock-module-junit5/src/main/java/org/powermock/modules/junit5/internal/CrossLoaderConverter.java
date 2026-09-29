@@ -40,6 +40,14 @@ public class CrossLoaderConverter {
         return result;
     }
 
+    /** Copies (converted) field values of {@code from} into the existing object {@code to} of the target world. */
+    public static void copyInto(Object from, Object to, ClassLoader target, Map<Object, Object> known) {
+        CrossLoaderConverter converter = new CrossLoaderConverter(target);
+        converter.converted.putAll(known);
+        converter.converted.put(from, to);
+        converter.copyFields(from.getClass(), from, to.getClass(), to);
+    }
+
     /** The class with the same name as seen by the target loader, or null if it cannot be loaded. */
     static Class<?> counterpart(Class<?> type, ClassLoader loader) {
         if (type.isPrimitive()) {
