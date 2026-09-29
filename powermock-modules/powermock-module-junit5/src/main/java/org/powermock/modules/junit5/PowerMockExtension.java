@@ -65,7 +65,13 @@ public class PowerMockExtension implements TestInstancePostProcessor, Invocation
 
     @Override
     public void afterEach(ExtensionContext context) {
-        PowerMockStateCleaner.clear(TestClassInClassLoader.of(context).getClassLoader());
+        ClassLoader loader = TestClassInClassLoader.of(context).getClassLoader();
+        if (context.getTestInstanceLifecycle().orElse(null) == org.junit.jupiter.api.TestInstance.Lifecycle.PER_CLASS) {
+            // PER_CLASS: instance mocks (e.g. spies created in a non-static @BeforeAll) survive the per-test reset
+            PowerMockStateCleaner.clearKeepingInstanceMocks(loader);
+        } else {
+            PowerMockStateCleaner.clear(loader);
+        }
     }
 
     private static void redirect(Invocation<Void> invocation, ReflectiveInvocationContext<Method> ic,
