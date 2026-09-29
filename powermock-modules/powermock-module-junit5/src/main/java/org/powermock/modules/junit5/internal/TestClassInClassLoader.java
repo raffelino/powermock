@@ -6,6 +6,8 @@ import org.powermock.tests.utils.impl.MockPolicyInitializerImpl;
 import org.powermock.tests.utils.impl.PowerMockIgnorePackagesExtractorImpl;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 
 /**
  * One MockClassLoader per test class (built from @PrepareForTest, @PowerMockIgnore,
@@ -16,6 +18,8 @@ import java.lang.reflect.Constructor;
 public class TestClassInClassLoader {
 
     private static final ExtensionContext.Namespace NAMESPACE = ExtensionContext.Namespace.create(TestClassInClassLoader.class);
+
+    private static final String ANNOTATION_ENABLER = "org.powermock.api.extension.listener.AnnotationEnabler";
 
     private final ClassLoader classLoader;
     private final Class<?> testClass;
@@ -49,9 +53,38 @@ public class TestClassInClassLoader {
         // ponytail: no-arg constructor only (no constructor parameter resolution), add when a test needs it
         Constructor<?> constructor = testClass.getDeclaredConstructor();
         constructor.setAccessible(true);
-        Object shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, constructor::newInstance);
+        final Object shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, constructor::newInstance);
+        MockClassLoaderInvoker.withContextClassLoader(classLoader, () -> {
+            injectAnnotatedMocks(shadow);
+            return null;
+        });
         // Store keys use equals(); test classes don't override it, so this is identity.
         context.getStore(NAMESPACE).put(originalInstance, shadow);
+    }
+
+    /**
+     * Processes the mock annotations of the mocking API on the class path (Mockito's @Mock, @Spy, @Captor,
+     * @InjectMocks or EasyMock's @Mock, @MockNice, @MockStrict) on a fresh shadow instance, exactly like
+     * the JUnit 4 runner and the TestNG module do via the API's AnnotationEnabler.
+     */
+    private void injectAnnotatedMocks(Object shadow) throws Exception {
+        Class<?> enablerClass;
+        try {
+            enablerClass = Class.forName(ANNOTATION_ENABLER, true, classLoader);
+        } catch (ClassNotFoundException e) {
+            return; // no PowerMock mocking API with annotation support on the class path
+        }
+        Object enabler = enablerClass.getDeclaredConstructor().newInstance();
+        Method beforeTestMethod = enablerClass.getMethod("beforeTestMethod", Object.class, Method.class, Object[].class);
+        try {
+            beforeTestMethod.invoke(enabler, shadow, null, new Object[0]);
+        } catch (InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof Exception) {
+                throw (Exception) cause;
+            }
+            throw (Error) cause;
+        }
     }
 
     public Object getShadowInstance(Object originalInstance, ExtensionContext context) {
