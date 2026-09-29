@@ -11,6 +11,19 @@ import java.lang.reflect.Method;
 public class MockAnnotationInjector {
 
     public static void inject(ClassLoader classLoader, Object shadow) throws Throwable {
+        try {
+            final Class<?> enablerClass = Class.forName("org.powermock.api.extension.listener.AnnotationEnabler", true, classLoader);
+            final Object enabler = org.powermock.reflect.Whitebox.newInstance(enablerClass);
+            final Method before = enablerClass.getMethod("beforeTestMethod", Object.class, Method.class, Object[].class);
+            try {
+                MockClassLoaderInvoker.withContextClassLoader(classLoader, () -> before.invoke(enabler, shadow, null, null));
+            } catch (InvocationTargetException e) {
+                throw e.getCause();
+            }
+            return;
+        } catch (ClassNotFoundException e) {
+            // fall back to plain Mockito below
+        }
         final Method init;
         try {
             Class<?> annotations = Class.forName("org.mockito.MockitoAnnotations", true, classLoader);
