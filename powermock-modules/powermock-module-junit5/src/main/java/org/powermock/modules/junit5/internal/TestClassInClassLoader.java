@@ -50,6 +50,7 @@ public class TestClassInClassLoader {
         Constructor<?> constructor = testClass.getDeclaredConstructor();
         constructor.setAccessible(true);
         Object shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, constructor::newInstance);
+        AnnotationInjector.inject(classLoader, shadow);
         // Store keys use equals(); test classes don't override it, so this is identity.
         context.getStore(NAMESPACE).put(originalInstance, shadow);
     }
