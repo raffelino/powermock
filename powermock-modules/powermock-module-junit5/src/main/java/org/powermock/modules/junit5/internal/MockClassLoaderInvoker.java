@@ -28,10 +28,14 @@ public class MockClassLoaderInvoker {
         for (int i = 0; i < args.length; i++) {
             args[i] = convertArgument(args[i], loaded.getClassLoader());
         }
+        final Object original = ic.getTarget().orElse(null);
+        FieldSync.copy(original, target);
         try {
             return withContextClassLoader(loaded.getClassLoader(), () -> method.invoke(target, args));
         } catch (InvocationTargetException e) {
             throw e.getCause();
+        } finally {
+            FieldSync.copy(target, original);
         }
     }
 
