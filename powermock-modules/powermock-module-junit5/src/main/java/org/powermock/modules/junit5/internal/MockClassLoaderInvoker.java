@@ -19,11 +19,67 @@ public class MockClassLoaderInvoker {
         final Object target = ic.getTarget().isPresent()
             ? loaded.getShadowInstance(ic.getTarget().get(), context)
             : null;
-        final Object[] args = new CrossClassLoaderConverter(loaded.getClassLoader()).convertAll(ic.getArguments().toArray());
+        final CrossClassLoaderConverter converter = new CrossClassLoaderConverter(loaded.getClassLoader());
+        final Object[] args = converter.convertAll(ic.getArguments().toArray());
+        final Object original = ic.getTarget().orElse(null);
+        if (original != null) {
+            copyStateIntoShadow(converter, original, target);
+        }
         try {
             withContextClassLoader(loaded.getClassLoader(), () -> method.invoke(target, args));
         } catch (InvocationTargetException e) {
             throw e.getCause();
+        } finally {
+            if (original != null) {
+                copyStateFromShadow(target, original);
+            }
+        }
+    }
+
+    /**
+     * Fields set on Jupiter's instance by Jupiter or other extensions (@TempDir, TestInstancePostProcessors ...)
+     * are copied into the shadow instance where it has no value of its own.
+     */
+    private static void copyStateIntoShadow(CrossClassLoaderConverter converter, Object original, Object shadow) throws Exception {
+        for (Class<?> c = original.getClass(), s = shadow.getClass(); c != null && c != Object.class;
+             c = c.getSuperclass(), s = s.getSuperclass()) {
+            for (java.lang.reflect.Field field : c.getDeclaredFields()) {
+                if (java.lang.reflect.Modifier.isStatic(field.getModifiers()) || field.isSynthetic()) {
+                    continue;
+                }
+                field.setAccessible(true);
+                Object value = field.get(original);
+                java.lang.reflect.Field shadowField = s.getDeclaredField(field.getName());
+                shadowField.setAccessible(true);
+                if (value != null && shadowField.get(shadow) == null && !shadowField.getType().isPrimitive()) {
+                    Object converted = converter.convert(value);
+                    if (shadowField.getType().isInstance(converted)) {
+                        shadowField.set(shadow, converted);
+                    }
+                }
+            }
+        }
+    }
+
+    /** The shadow's field values are mirrored back where the types are compatible, so other extensions see them. */
+    private static void copyStateFromShadow(Object shadow, Object original) throws Exception {
+        for (Class<?> c = original.getClass(), s = shadow.getClass(); c != null && c != Object.class;
+             c = c.getSuperclass(), s = s.getSuperclass()) {
+            for (java.lang.reflect.Field field : c.getDeclaredFields()) {
+                if (java.lang.reflect.Modifier.isStatic(field.getModifiers()) || field.isSynthetic()
+                    || java.lang.reflect.Modifier.isFinal(field.getModifiers())) {
+                    continue;
+                }
+                java.lang.reflect.Field shadowField = s.getDeclaredField(field.getName());
+                shadowField.setAccessible(true);
+                Object value = shadowField.get(shadow);
+                field.setAccessible(true);
+                if (field.getType().isPrimitive() || value == null || field.getType().isInstance(value)) {
+                    if (value != null || !field.getType().isPrimitive()) {
+                        field.set(original, value);
+                    }
+                }
+            }
         }
     }
 
