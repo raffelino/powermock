@@ -25,6 +25,7 @@ public class MockClassLoaderInvoker {
         if (target != null) {
             ArgumentConverter.copyInjectedFields(original, target, loaded.getClassLoader());
         }
+        syncRegisteredExtensions(original, target);
         try {
             return withContextClassLoader(loaded.getClassLoader(), () -> method.invoke(target, args));
         } catch (InvocationTargetException e) {
@@ -32,6 +33,7 @@ public class MockClassLoaderInvoker {
                 : ic.getExecutable().getDeclaringClass().getClassLoader());
         } finally {
             InstanceFieldSync.copyWithEnclosing(target, original);
+            syncRegisteredExtensions(target, original);
         }
     }
 
@@ -66,6 +68,56 @@ public class MockClassLoaderInvoker {
             return converted instanceof Throwable ? (Throwable) converted : t;
         } catch (Exception | LinkageError e) {
             return t;
+        }
+    }
+
+    /**
+     * Copies the state of @RegisterExtension instance fields' objects between Jupiter's instance and the shadow
+     * (the two extension objects are of the same class loaded by different class loaders).
+     */
+    @SuppressWarnings("unchecked")
+    private static void syncRegisteredExtensions(Object from, Object to) {
+        if (from == null || to == null || from == to) {
+            return;
+        }
+        for (Class<?> c = from.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+            for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                if (java.lang.reflect.Modifier.isStatic(f.getModifiers())
+                    || !f.isAnnotationPresent(org.junit.jupiter.api.extension.RegisterExtension.class)) {
+                    continue;
+                }
+                try {
+                    java.lang.reflect.Field g = Class.forName(c.getName(), false, to.getClass().getClassLoader())
+                        .getDeclaredField(f.getName());
+                    f.setAccessible(true);
+                    g.setAccessible(true);
+                    Object src = f.get(from);
+                    Object dst = g.get(to);
+                    if (src == null || dst == null || src == dst) {
+                        continue;
+                    }
+                    for (java.lang.reflect.Field sf : src.getClass().getDeclaredFields()) {
+                        if (java.lang.reflect.Modifier.isStatic(sf.getModifiers())) {
+                            continue;
+                        }
+                        java.lang.reflect.Field df = dst.getClass().getDeclaredField(sf.getName());
+                        sf.setAccessible(true);
+                        df.setAccessible(true);
+                        Object v = sf.get(src);
+                        Object current = df.get(dst);
+                        if (v instanceof java.util.Collection && current instanceof java.util.Collection) {
+                            java.util.Collection<Object> target = (java.util.Collection<Object>) current;
+                            target.clear();
+                            target.addAll((java.util.Collection<Object>) v);
+                        } else if (!java.lang.reflect.Modifier.isFinal(df.getModifiers())
+                            && (df.getType().isPrimitive() || v == null || df.getType().isInstance(v))) {
+                            df.set(dst, v);
+                        }
+                    }
+                } catch (Exception e) {
+                    // leave the extension object as it is
+                }
+            }
         }
     }
 
