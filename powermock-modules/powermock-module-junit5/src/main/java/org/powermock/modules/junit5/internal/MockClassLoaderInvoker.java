@@ -40,7 +40,7 @@ public class MockClassLoaderInvoker {
      * Fields set on Jupiter's instance by Jupiter or other extensions (@TempDir, TestInstancePostProcessors ...)
      * are copied into the shadow instance where it has no value of its own.
      */
-    private static void copyStateIntoShadow(CrossClassLoaderConverter converter, Object original, Object shadow) throws Exception {
+    static void copyStateIntoShadow(CrossClassLoaderConverter converter, Object original, Object shadow) throws Exception {
         for (Class<?> c = original.getClass(), s = shadow.getClass(); c != null && c != Object.class;
              c = c.getSuperclass(), s = s.getSuperclass()) {
             for (java.lang.reflect.Field field : c.getDeclaredFields()) {

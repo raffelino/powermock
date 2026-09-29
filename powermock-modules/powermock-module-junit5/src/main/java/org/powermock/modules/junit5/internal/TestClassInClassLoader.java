@@ -5,6 +5,8 @@ import org.powermock.core.classloader.MockClassLoaderFactory;
 import org.powermock.tests.utils.impl.MockPolicyInitializerImpl;
 import org.powermock.tests.utils.impl.PowerMockIgnorePackagesExtractorImpl;
 
+import org.powermock.reflect.Whitebox;
+
 import java.lang.reflect.Constructor;
 
 /**
@@ -46,12 +48,28 @@ public class TestClassInClassLoader {
     }
 
     public void createShadowInstance(Object originalInstance, ExtensionContext context) throws Exception {
-        // ponytail: no-arg constructor only (no constructor parameter resolution), add when a test needs it
-        Constructor<?> constructor = testClass.getDeclaredConstructor();
-        constructor.setAccessible(true);
-        Object shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, constructor::newInstance);
+        Object shadow;
+        Constructor<?> constructor = noArgConstructor();
+        if (constructor != null) {
+            shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, constructor::newInstance);
+        } else {
+            // Constructor parameters were resolved by Jupiter for its own instance; the shadow is created without
+            // running a constructor and receives the state of Jupiter's instance (see MockClassLoaderInvoker).
+            shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, () -> Whitebox.newInstance(testClass));
+            MockClassLoaderInvoker.copyStateIntoShadow(new CrossClassLoaderConverter(classLoader), originalInstance, shadow);
+        }
         // Store keys use equals(); test classes don't override it, so this is identity.
         context.getStore(NAMESPACE).put(originalInstance, shadow);
+    }
+
+    private Constructor<?> noArgConstructor() {
+        try {
+            Constructor<?> constructor = testClass.getDeclaredConstructor();
+            constructor.setAccessible(true);
+            return constructor;
+        } catch (NoSuchMethodException e) {
+            return null;
+        }
     }
 
     public Object getShadowInstance(Object originalInstance, ExtensionContext context) {
