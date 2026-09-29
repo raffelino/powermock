@@ -57,15 +57,19 @@ public class TestClassInClassLoader {
 
     /** Processes @Mock/@Spy/@Captor/@InjectMocks on the shadow instance with the MockClassLoader's Mockito, like PowerMockRunner. */
     private void initMockitoAnnotations(final Object shadow) throws Exception {
-        final Class<?> annotations;
+        final Class<?> enabler;
         try {
-            annotations = Class.forName("org.mockito.MockitoAnnotations", true, classLoader);
+            // PowerMock's own annotation processing (as in PowerMockRunner): handles spies of prepared/final classes
+            enabler = Class.forName("org.powermock.api.mockito.powermocklistener.AnnotationEnabler", true, classLoader);
         } catch (ClassNotFoundException e) {
-            return; // Mockito not on the test class path
+            return; // powermock-api-mockito2 not on the test class path
         }
         try {
-            MockClassLoaderInvoker.withContextClassLoader(classLoader,
-                () -> annotations.getMethod("openMocks", Object.class).invoke(null, shadow));
+            MockClassLoaderInvoker.withContextClassLoader(classLoader, () -> {
+                Object listener = enabler.getConstructor().newInstance();
+                return enabler.getMethod("beforeTestMethod", Object.class, java.lang.reflect.Method.class, Object[].class)
+                    .invoke(listener, shadow, null, new Object[0]);
+            });
         } catch (java.lang.reflect.InvocationTargetException e) {
             Throwable cause = e.getCause();
             if (cause instanceof Exception) {
