@@ -23,7 +23,7 @@ public class MockClassLoaderInvoker {
         Class<?>[] types = method.getParameterTypes();
         CrossLoaderConverter converter = new CrossLoaderConverter(loaded.getClassLoader());
         for (int i = 0; i < args.length; i++) {
-            if (args[i] != null && !types[i].isPrimitive() && !types[i].isInstance(args[i])) {
+            if (args[i] != null && !types[i].isPrimitive()) {
                 args[i] = converter.convert(args[i]);
             }
         }

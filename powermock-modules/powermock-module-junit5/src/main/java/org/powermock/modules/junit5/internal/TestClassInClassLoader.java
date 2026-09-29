@@ -32,8 +32,13 @@ public class TestClassInClassLoader {
     }
 
     public static TestClassInClassLoader of(ExtensionContext context) {
-        Class<?> originalTestClass = context.getRequiredTestClass();
-        return context.getStore(NAMESPACE).getOrComputeIfAbsent(
+        // @Nested classes share the MockClassLoader of their outermost test class (inheriting its @PrepareForTest)
+        ExtensionContext outermost = context;
+        for (ExtensionContext c = context; c != null && c.getTestClass().isPresent(); c = c.getParent().orElse(null)) {
+            outermost = c;
+        }
+        Class<?> originalTestClass = outermost.getRequiredTestClass();
+        return outermost.getStore(NAMESPACE).getOrComputeIfAbsent(
             originalTestClass, TestClassInClassLoader::new, TestClassInClassLoader.class);
     }
 
@@ -46,6 +51,7 @@ public class TestClassInClassLoader {
     }
 
     public void createShadowInstance(Object originalInstance, ExtensionContext context) throws Exception {
+        final Class<?> testClass = loadedClass(originalInstance.getClass());
         Object shadow;
         Constructor<?> constructor = null;
         try {
@@ -60,12 +66,32 @@ public class TestClassInClassLoader {
             final Object original = originalInstance;
             shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, () -> {
                 Object copy = new org.objenesis.ObjenesisStd(true).newInstance(testClass);
-                new CrossLoaderConverter(classLoader).seed(original, copy).copyFields(original, copy);
+                CrossLoaderConverter converter = new CrossLoaderConverter(classLoader).seed(original, copy);
+                for (java.lang.reflect.Field f : original.getClass().getDeclaredFields()) {
+                    if (!f.isSynthetic() || !f.getName().startsWith("this$")) {
+                        continue;
+                    }
+                    f.setAccessible(true);
+                    Object enclosing = f.get(original);
+                    Object enclosingShadow = context.getStore(NAMESPACE).get(enclosing);
+                    if (enclosingShadow != null) {
+                        converter.seed(enclosing, enclosingShadow);
+                    }
+                }
+                converter.copyFields(original, copy);
                 return copy;
             });
         }
         // Store keys use equals(); test classes don't override it, so this is identity.
         context.getStore(NAMESPACE).put(originalInstance, shadow);
+    }
+
+    private Class<?> loadedClass(Class<?> original) {
+        try {
+            return Class.forName(original.getName(), false, classLoader);
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException("Cannot load " + original + " in PowerMock's MockClassLoader", e);
+        }
     }
 
     public Object getShadowInstance(Object originalInstance, ExtensionContext context) {
