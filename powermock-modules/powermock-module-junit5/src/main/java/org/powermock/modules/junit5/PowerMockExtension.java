@@ -1,6 +1,7 @@
 package org.powermock.modules.junit5;
 
 import org.junit.jupiter.api.extension.AfterEachCallback;
+import org.junit.jupiter.api.extension.DynamicTestInvocationContext;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.extension.InvocationInterceptor;
 import org.junit.jupiter.api.extension.ReflectiveInvocationContext;
@@ -49,6 +50,30 @@ public class PowerMockExtension implements TestInstancePostProcessor, Invocation
     public void interceptTestTemplateMethod(Invocation<Void> invocation, ReflectiveInvocationContext<Method> ic,
                                             ExtensionContext context) throws Throwable {
         redirect(invocation, ic, context);
+    }
+
+    @Override
+    public <T> T interceptTestFactoryMethod(Invocation<T> invocation, ReflectiveInvocationContext<Method> ic,
+                                            ExtensionContext context) throws Throwable {
+        invocation.skip();
+        @SuppressWarnings("unchecked")
+        T result = (T) MockClassLoaderInvoker.invoke(TestClassInClassLoader.of(context), ic, context);
+        return result;
+    }
+
+    @Override
+    public void interceptDynamicTest(Invocation<Void> invocation, DynamicTestInvocationContext dic,
+                                     ExtensionContext context) throws Throwable {
+        MockClassLoaderInvoker.withContextClassLoader(TestClassInClassLoader.of(context).getClassLoader(), () -> {
+            try {
+                invocation.proceed();
+            } catch (Exception | Error e) {
+                throw e;
+            } catch (Throwable t) {
+                throw new RuntimeException(t);
+            }
+            return null;
+        });
     }
 
     @Override
