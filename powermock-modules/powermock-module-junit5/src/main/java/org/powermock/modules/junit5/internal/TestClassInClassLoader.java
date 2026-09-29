@@ -83,6 +83,15 @@ public class TestClassInClassLoader {
         }
     }
 
+    private static boolean hasOwnPowerMockConfiguration(Class<?> c) {
+        for (java.lang.annotation.Annotation a : c.getDeclaredAnnotations()) {
+            if (a.annotationType().getName().startsWith("org.powermock.")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static boolean isInner(Class<?> c) {
         return c.getEnclosingClass() != null && !Modifier.isStatic(c.getModifiers());
     }
@@ -96,6 +105,12 @@ public class TestClassInClassLoader {
         while (!(classContext.getElement().isPresent() && classContext.getElement().get() == originalTestClass)
             && classContext.getParent().isPresent()) {
             classContext = classContext.getParent().get();
+        }
+        if (isInner(originalTestClass) && !hasOwnPowerMockConfiguration(originalTestClass)
+            && classContext.getParent().isPresent() && classContext.getParent().get().getTestClass().isPresent()) {
+            // a @Nested class without its own configuration shares the enclosing class's MockClassLoader and
+            // shadows, so state created by enclosing lifecycle methods (e.g. PER_CLASS @BeforeAll mocks) is usable
+            return of(classContext.getParent().get());
         }
         return classContext.getStore(NAMESPACE).getOrComputeIfAbsent(
             originalTestClass, TestClassInClassLoader::new, TestClassInClassLoader.class);
