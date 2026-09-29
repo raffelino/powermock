@@ -28,9 +28,44 @@ public class MockClassLoaderInvoker {
         try {
             return withContextClassLoader(loaded.getClassLoader(), () -> method.invoke(target, args));
         } catch (InvocationTargetException e) {
-            throw e.getCause();
+            throw toTestClassLoader(e.getCause(), original != null ? original.getClass().getClassLoader()
+                : ic.getExecutable().getDeclaringClass().getClassLoader());
         } finally {
             InstanceFieldSync.copyWithEnclosing(target, original);
+        }
+    }
+
+    /**
+     * Re-creates a throwable thrown by MockClassLoader-loaded code with the classes of the given (Jupiter side)
+     * class loader, so that user exception types are seen as themselves by handlers, watchers and the engine.
+     * Falls back to the original throwable if it cannot be converted.
+     */
+    static Throwable toTestClassLoader(Throwable t, final ClassLoader target) {
+        if (t == null || target == null || t.getClass().getClassLoader() == target
+            || t.getClass().getClassLoader() == null) {
+            return t;
+        }
+        try {
+            java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+            java.io.ObjectOutputStream out = new java.io.ObjectOutputStream(bytes);
+            out.writeObject(t);
+            out.close();
+            java.io.ObjectInputStream in = new java.io.ObjectInputStream(
+                new java.io.ByteArrayInputStream(bytes.toByteArray())) {
+                @Override
+                protected Class<?> resolveClass(java.io.ObjectStreamClass desc)
+                    throws java.io.IOException, ClassNotFoundException {
+                    try {
+                        return Class.forName(desc.getName(), false, target);
+                    } catch (ClassNotFoundException e) {
+                        return super.resolveClass(desc);
+                    }
+                }
+            };
+            Object converted = in.readObject();
+            return converted instanceof Throwable ? (Throwable) converted : t;
+        } catch (Exception | LinkageError e) {
+            return t;
         }
     }
 
