@@ -52,6 +52,27 @@ public class TestClassInClassLoader {
         Object shadow = MockClassLoaderInvoker.withContextClassLoader(classLoader, constructor::newInstance);
         // Store keys use equals(); test classes don't override it, so this is identity.
         context.getStore(NAMESPACE).put(originalInstance, shadow);
+        MockClassLoaderInvoker.withContextClassLoader(classLoader, () -> {
+            injectMockAnnotations(shadow);
+            return null;
+        });
+    }
+
+    /**
+     * Processes mock annotations (@Mock, @Spy, @Captor, @InjectMocks; EasyMock @Mock/@MockNice/@MockStrict)
+     * on the shadow instance, like the JUnit 4 runner does, using the AnnotationEnabler of whichever
+     * PowerMock API is on the class path, loaded by the MockClassLoader.
+     */
+    private void injectMockAnnotations(Object shadow) throws Exception {
+        Class<?> enablerClass;
+        try {
+            enablerClass = Class.forName("org.powermock.api.extension.listener.AnnotationEnabler", true, classLoader);
+        } catch (ClassNotFoundException e) {
+            return;
+        }
+        Object enabler = enablerClass.getDeclaredConstructor().newInstance();
+        enablerClass.getMethod("beforeTestMethod", Object.class, java.lang.reflect.Method.class, Object[].class)
+                .invoke(enabler, shadow, null, new Object[0]);
     }
 
     public Object getShadowInstance(Object originalInstance, ExtensionContext context) {
