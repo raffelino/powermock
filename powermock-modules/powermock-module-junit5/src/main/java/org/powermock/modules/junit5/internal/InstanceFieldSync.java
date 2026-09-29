@@ -14,7 +14,11 @@ final class InstanceFieldSync {
     }
 
     static void copy(Object from, Object to) {
-        if (from == null || to == null || from == to) {
+        copy(from, to, new java.util.IdentityHashMap<Object, Boolean>());
+    }
+
+    private static void copy(Object from, Object to, java.util.Map<Object, Boolean> seen) {
+        if (from == null || to == null || from == to || seen.put(from, Boolean.TRUE) != null) {
             return;
         }
         Class<?> fromClass = from.getClass();
@@ -22,16 +26,25 @@ final class InstanceFieldSync {
         while (fromClass != null && toClass != null && fromClass != Object.class) {
             for (Field source : fromClass.getDeclaredFields()) {
                 int mod = source.getModifiers();
-                if (Modifier.isStatic(mod) || Modifier.isFinal(mod) || source.isSynthetic()) {
+                if (Modifier.isStatic(mod) || source.isSynthetic()) {
                     continue;
                 }
                 try {
                     Field target = toClass.getDeclaredField(source.getName());
-                    if (target.getType() != source.getType()) {
-                        continue;
-                    }
                     source.setAccessible(true);
                     target.setAccessible(true);
+                    if (target.getType() != source.getType() || Modifier.isFinal(mod)) {
+                        // same field, different loaders (e.g. a @RegisterExtension instance): mirror the
+                        // state of the object the other side holds instead of replacing it
+                        Object fromValue = source.get(from);
+                        Object toValue = target.get(to);
+                        if (fromValue != null && toValue != null && fromValue != toValue
+                            && fromValue.getClass().getName().equals(toValue.getClass().getName())
+                            && fromValue.getClass() != toValue.getClass()) {
+                            copy(fromValue, toValue, seen);
+                        }
+                        continue;
+                    }
                     Object value = source.get(from);
                     if (value != null) { // never clobber state set up on the other side (e.g. injected mocks)
                         target.set(to, value);
