@@ -23,11 +23,25 @@ public class TestClassInClassLoader {
     private TestClassInClassLoader(Class<?> originalTestClass) {
         String[] packagesToIgnore = new PowerMockIgnorePackagesExtractorImpl().getPackagesToIgnore(originalTestClass);
         this.classLoader = new MockClassLoaderFactory(originalTestClass, packagesToIgnore).createForClass(null);
+        // @Nested classes share this loader, so their own @PrepareForTest entries must be covered too.
+        if (classLoader instanceof org.powermock.core.classloader.MockClassLoader) {
+            addNestedPrepareForTest(originalTestClass,
+                ((org.powermock.core.classloader.MockClassLoader) classLoader).getConfiguration());
+        }
         new MockPolicyInitializerImpl(originalTestClass).initialize(classLoader);
         try {
             this.testClass = Class.forName(originalTestClass.getName(), false, classLoader);
         } catch (ClassNotFoundException e) {
             throw new IllegalStateException("Cannot load " + originalTestClass + " in PowerMock's MockClassLoader", e);
+        }
+    }
+
+    private static void addNestedPrepareForTest(Class<?> outer, org.powermock.core.classloader.MockClassLoaderConfiguration configuration) {
+        for (Class<?> nested : outer.getDeclaredClasses()) {
+            if (!java.lang.reflect.Modifier.isStatic(nested.getModifiers())) {
+                configuration.addClassesToModify(new org.powermock.tests.utils.impl.PrepareForTestExtractorImpl().getTestClasses(nested));
+                addNestedPrepareForTest(nested, configuration);
+            }
         }
     }
 
