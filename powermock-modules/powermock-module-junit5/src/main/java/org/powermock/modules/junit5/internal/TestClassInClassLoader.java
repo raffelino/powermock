@@ -22,13 +22,21 @@ public class TestClassInClassLoader {
 
     private TestClassInClassLoader(Class<?> originalTestClass) {
         // @Nested: configuration (e.g. @PrepareForTest) comes from the outermost class.
-        // ponytail: nested classes' own @PrepareForTest are not merged yet
         Class<?> configClass = originalTestClass;
         while (configClass.getEnclosingClass() != null && enclosingInstanceField(configClass) != null) {
             configClass = configClass.getEnclosingClass();
         }
         String[] packagesToIgnore = new PowerMockIgnorePackagesExtractorImpl().getPackagesToIgnore(configClass);
         this.classLoader = new MockClassLoaderFactory(configClass, packagesToIgnore).createForClass(null);
+        // Nested classes may add their own @PrepareForTest / @SuppressStaticInitializationFor.
+        if (classLoader instanceof org.powermock.core.classloader.MockClassLoader) {
+            org.powermock.core.classloader.MockClassLoaderConfiguration configuration =
+                ((org.powermock.core.classloader.MockClassLoader) classLoader).getConfiguration();
+            for (Class<?> c = originalTestClass; c != configClass; c = c.getEnclosingClass()) {
+                configuration.addClassesToModify(new org.powermock.tests.utils.impl.PrepareForTestExtractorImpl().getTestClasses(c));
+                configuration.addClassesToModify(new org.powermock.tests.utils.impl.StaticConstructorSuppressExtractorImpl().getTestClasses(c));
+            }
+        }
         new MockPolicyInitializerImpl(configClass).initialize(classLoader);
         try {
             this.testClass = Class.forName(originalTestClass.getName(), false, classLoader);
