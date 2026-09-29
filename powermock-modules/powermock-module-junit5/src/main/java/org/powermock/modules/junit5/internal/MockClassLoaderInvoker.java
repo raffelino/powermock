@@ -19,11 +19,18 @@ public class MockClassLoaderInvoker {
         final Object target = ic.getTarget().isPresent()
             ? loaded.getShadowInstance(ic.getTarget().get(), context)
             : null;
-        final Object[] args = ic.getArguments().toArray();
+        loaded.syncToShadows();
+        final Object[] args = CrossLoaderConverter.convertAll(ic.getArguments().toArray(), loaded.getClassLoader(),
+            loaded.knownShadows());
         try {
             withContextClassLoader(loaded.getClassLoader(), () -> method.invoke(target, args));
         } catch (InvocationTargetException e) {
-            throw e.getCause();
+            // user exception types seen by Jupiter (handlers, watchers, assertThrows outside) are the outside ones
+            Object converted = CrossLoaderConverter.convert(e.getCause(),
+                ic.getExecutable().getDeclaringClass().getClassLoader(), new java.util.IdentityHashMap<Object, Object>());
+            throw converted instanceof Throwable ? (Throwable) converted : e.getCause();
+        } finally {
+            loaded.syncFromShadows();
         }
     }
 
