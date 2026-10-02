@@ -70,12 +70,26 @@ final class AnnotationMocks {
                     field.set(shadow, mockWithSettings.invoke(null, field.getType(), settings));
                 }
                 if (field.isAnnotationPresent(captorAnnotation) && field.get(shadow) == null) {
-                    field.set(shadow, captor.getMethod("forClass", Class.class).invoke(null, Object.class));
+                    field.set(shadow, captor.getMethod("forClass", Class.class).invoke(null, captorType(field)));
                 }
             }
         }
         Object engineInstance = engine.getDeclaredConstructor().newInstance();
         engine.getMethod("process", Class.class, Object.class).invoke(engineInstance, shadow.getClass(), shadow);
+    }
+
+    private static Class<?> captorType(Field field) {
+        java.lang.reflect.Type type = field.getGenericType();
+        if (type instanceof java.lang.reflect.ParameterizedType) {
+            java.lang.reflect.Type argument = ((java.lang.reflect.ParameterizedType) type).getActualTypeArguments()[0];
+            if (argument instanceof java.lang.reflect.ParameterizedType) {
+                argument = ((java.lang.reflect.ParameterizedType) argument).getRawType();
+            }
+            if (argument instanceof Class) {
+                return (Class<?>) argument;
+            }
+        }
+        return Object.class;
     }
 
     private static void injectEasyMock(Object shadow, ClassLoader loader) throws Exception {

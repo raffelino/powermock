@@ -1,5 +1,7 @@
 package org.powermock.modules.junit5.internal;
 
+import org.junit.jupiter.api.extension.RegisterExtension;
+
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
@@ -63,7 +65,8 @@ class FieldSync {
                 continue;
             }
             Object transferred = transfer.transfer(shadowField.get(shadow));
-            if (transferred == CrossLoader.NOT_SHAREABLE || !isAssignable(field, transferred)) {
+            if (transferred == CrossLoader.NOT_SHAREABLE || !isAssignable(field, transferred)
+                || Modifier.isFinal(field.getModifiers())) {
                 continue;
             }
             field.set(original, transferred);
@@ -119,7 +122,8 @@ class FieldSync {
         for (Class<?> c = type; c != null && c != Object.class; c = c.getSuperclass()) {
             for (Field f : c.getDeclaredFields()) {
                 int m = f.getModifiers();
-                if (Modifier.isStatic(m) || Modifier.isFinal(m) || f.isSynthetic() || isShadowOwned(f)) {
+                if (Modifier.isStatic(m) || f.isSynthetic() || isShadowOwned(f)
+                    || Modifier.isFinal(m) && !f.isAnnotationPresent(RegisterExtension.class)) {
                     continue;
                 }
                 f.setAccessible(true);

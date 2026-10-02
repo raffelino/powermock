@@ -59,8 +59,9 @@ public class PowerMockStateCleaner {
             field.setAccessible(true);
             List<Object[]> result = new ArrayList<Object[]>();
             synchronized (repository) {
-                for (Map.Entry<?, ?> entry : ((Map<?, ?>) field.get(null)).entrySet()) {
-                    result.add(new Object[]{entry.getKey(), entry.getValue()});
+                Map<?, ?> map = (Map<?, ?>) field.get(null);
+                for (Object key : map.keySet()) {
+                    result.add(new Object[]{key, map.get(key)});
                 }
             }
             return result;

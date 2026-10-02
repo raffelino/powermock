@@ -82,7 +82,7 @@ public class PowerMockExtension implements InvocationInterceptor, AfterEachCallb
                 }
             });
         } catch (Wrapped w) {
-            throw loaded.translate(w.getCause(), context.getRequiredTestClass().getClassLoader());
+            throw loaded.translate(w.getCause(), PowerMockExtension.class.getClassLoader());
         }
     }
 

@@ -91,8 +91,8 @@ public class TestClassInClassLoader {
     }
 
     public static TestClassInClassLoader of(ExtensionContext context) {
-        Class<?> topLevel = context.getRequiredTestClass();
-        while (topLevel.getEnclosingClass() != null) {
+        Class<?> topLevel = testClass(context);
+        while (topLevel.getEnclosingClass() != null && !java.lang.reflect.Modifier.isStatic(topLevel.getModifiers())) {
             topLevel = topLevel.getEnclosingClass();
         }
         ExtensionContext storeContext = context;
@@ -102,6 +102,15 @@ public class TestClassInClassLoader {
         final Class<?> key = topLevel;
         return storeContext.getStore(NAMESPACE).getOrComputeIfAbsent(
             key, TestClassInClassLoader::new, TestClassInClassLoader.class);
+    }
+
+    private static Class<?> testClass(ExtensionContext context) {
+        for (ExtensionContext c = context; c != null; c = c.getParent().orElse(null)) {
+            if (c.getTestClass().isPresent()) {
+                return c.getTestClass().get();
+            }
+        }
+        return context.getRequiredTestClass();
     }
 
     public ClassLoader getClassLoader() {
